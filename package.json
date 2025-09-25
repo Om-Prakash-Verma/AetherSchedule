@@ -1,0 +1,41 @@
+{
+  "name": "aetherschedule-fullstack",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently --kill-others-on-fail \"npm:dev:api\" \"npm:dev:vite\"",
+    "dev:vite": "wait-on tcp:8787 && vite",
+    "dev:api": "tsx watch api/dev-server.ts",
+    "build": "vite build",
+    "serve": "vite preview",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@google/genai": "^1.20.0",
+    "@hono/zod-validator": "^0.2.2",
+    "@neondatabase/serverless": "^1.0.1",
+    "@radix-ui/react-slider": "^1.2.0",
+    "drizzle-orm": "^0.44.5",
+    "hono": "^4.5.1",
+    "lucide-react": "^0.408.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.12.0",
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "drizzle-kit": "^0.31.4",
+    "dotenv": "^16.4.5",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.4",
+    "wait-on": "^7.2.0"
+  }
+}

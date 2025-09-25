@@ -1,0 +1,5 @@
+{
+  "name": "AetherSchedule - Smart Timetable Scheduler",
+  "description": "A smart timetable scheduler for higher-education institutes, featuring an optimization engine to generate multiple timetable candidates. The UI is built with a cohesive black glassmorphism design system.",
+  "requestFramePermissions": []
+}
