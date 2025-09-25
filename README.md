@@ -77,7 +77,7 @@ The engine employs a sophisticated, multi-layered strategy, combining a battle-t
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/aetherschedule.git
+git clone https://github.com/om-prakash-verma/aetherschedule.git
 cd aetherschedule
 ```
 
