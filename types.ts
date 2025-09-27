@@ -64,8 +64,6 @@ export interface Batch {
   semester: number;
   studentCount: number;
   subjectIds: string[];
-  allocatedFacultyIds?: string[];
-  allocatedRoomIds?: string[];
 }
 
 export interface ClassAssignment {

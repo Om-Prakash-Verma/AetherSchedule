@@ -123,34 +123,12 @@ const DataManagement: React.FC = () => {
             { accessor: 'departmentId', header: 'Department', render: (b: Batch) => departments.find(d => d.id === b.departmentId)?.name || 'N/A'},
             { accessor: 'semester', header: 'Semester' },
             { accessor: 'studentCount', header: 'Students' },
-            { 
-                accessor: 'allocatedFacultyIds', 
-                header: 'Allocated Faculty', 
-                render: (b: Batch) => {
-                    if (!b.allocatedFacultyIds || b.allocatedFacultyIds.length === 0) {
-                        return <span className="text-text-muted">All Available</span>;
-                    }
-                    const names = b.allocatedFacultyIds.map(id => faculty.find(f => f.id === id)?.name || id).join(', ');
-                    return <span title={names}>{`${b.allocatedFacultyIds.length} specified`}</span>;
-                }
-            },
-            { 
-                accessor: 'allocatedRoomIds', 
-                header: 'Allocated Rooms', 
-                render: (b: Batch) => {
-                    if (!b.allocatedRoomIds || b.allocatedRoomIds.length === 0) {
-                        return <span className="text-text-muted">All Available</span>;
-                    }
-                    const names = b.allocatedRoomIds.map(id => rooms.find(r => r.id === id)?.name || id).join(', ');
-                    return <span title={names}>{`${b.allocatedRoomIds.length} specified`}</span>;
-                }
-            },
         ],
         departments: [
             { accessor: 'code', header: 'Code' },
             { accessor: 'name', header: 'Name' },
         ],
-    }), [faculty, subjects, departments, users, rooms]);
+    }), [faculty, subjects, departments, users]);
     
     const addButtonState = useMemo(() => {
         const typeName = TABS.find(t => t.id === activeTab)?.label.slice(0, -1);

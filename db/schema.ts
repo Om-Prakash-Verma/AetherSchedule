@@ -53,8 +53,6 @@ export const batches = pgTable('batches', {
     semester: integer('semester').notNull(),
     studentCount: integer('student_count').notNull(),
     subjectIds: jsonb('subject_ids').$type<string[]>().notNull(),
-    allocatedFacultyIds: jsonb('allocated_faculty_ids').$type<string[]>(),
-    allocatedRoomIds: jsonb('allocated_room_ids').$type<string[]>(),
 });
 
 export const timetables = pgTable('timetables', {

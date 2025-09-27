@@ -156,20 +156,11 @@ const createChromosome = (
 
             // Check if THIS BATCH is available
             if (isBatchAvailable(timetable[req.batch.id], day, slot)) {
-                
-                const batchFacultyPool = (req.batch.allocatedFacultyIds && req.batch.allocatedFacultyIds.length > 0)
-                    ? allFaculty.filter(f => req.batch.allocatedFacultyIds!.includes(f.id))
-                    : allFaculty;
-
-                const batchRoomPool = (req.batch.allocatedRoomIds && req.batch.allocatedRoomIds.length > 0)
-                    ? allRooms.filter(r => req.batch.allocatedRoomIds!.includes(r.id))
-                    : allRooms;
-                
-                const suitableFaculty = batchFacultyPool.filter(f => 
+                const suitableFaculty = allFaculty.filter(f => 
                     f.subjectIds.includes(req.subject.id) &&
                     isFacultyAvailable(f.id, day, slot, allExistingAssignments, constraints.facultyAvailability)
                 );
-                const suitableRooms = batchRoomPool.filter(r =>
+                const suitableRooms = allRooms.filter(r =>
                     isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allExistingAssignments)
                 );
 
@@ -237,19 +228,11 @@ const greedyRepair = (
             .filter(({ day, slot }) => isBatchAvailable(timetable[req.batch.id], day, slot));
             
         let bestSlot: { day: number; slot: number } | null = null;
-        
-        const batchFacultyPool = (req.batch.allocatedFacultyIds && req.batch.allocatedFacultyIds.length > 0)
-            ? allFaculty.filter(f => req.batch.allocatedFacultyIds!.includes(f.id))
-            : allFaculty;
-
-        const batchRoomPool = (req.batch.allocatedRoomIds && req.batch.allocatedRoomIds.length > 0)
-            ? allRooms.filter(r => req.batch.allocatedRoomIds!.includes(r.id))
-            : allRooms;
        
         for (const { day, slot } of potentialSlots) {
              const allAssignments = [...approvedAssignments, ...flattenTimetable(timetable)];
-            const suitableFaculty = batchFacultyPool.filter(f => f.subjectIds.includes(req.subject.id) && isFacultyAvailable(f.id, day, slot, allAssignments, constraints.facultyAvailability));
-            const suitableRooms = batchRoomPool.filter(r => isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allAssignments));
+            const suitableFaculty = allFaculty.filter(f => f.subjectIds.includes(req.subject.id) && isFacultyAvailable(f.id, day, slot, allAssignments, constraints.facultyAvailability));
+            const suitableRooms = allRooms.filter(r => isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allAssignments));
             
             if (suitableFaculty.length > 0 && suitableRooms.length > 0) {
                 bestSlot = { day, slot };
@@ -260,8 +243,8 @@ const greedyRepair = (
         if (bestSlot) {
             const { day, slot } = bestSlot;
             const allAssignments = [...approvedAssignments, ...flattenTimetable(timetable)];
-            const suitableFaculty = batchFacultyPool.filter(f => f.subjectIds.includes(req.subject.id) && isFacultyAvailable(f.id, day, slot, allAssignments, constraints.facultyAvailability));
-            const suitableRooms = batchRoomPool.filter(r => isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allAssignments));
+            const suitableFaculty = allFaculty.filter(f => f.subjectIds.includes(req.subject.id) && isFacultyAvailable(f.id, day, slot, allAssignments, constraints.facultyAvailability));
+            const suitableRooms = allRooms.filter(r => isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allAssignments));
             
             const assignment: ClassAssignment = { 
                 id: generateId(), batchId: req.batch.id, subjectId: req.subject.id, 

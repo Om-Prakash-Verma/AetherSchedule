@@ -114,8 +114,6 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
           <input name="semester" type="number" placeholder="Semester" value={formData.semester || ''} onChange={handleChange} className="glass-input" required/>
           <input name="studentCount" type="number" placeholder="Student Count" value={formData.studentCount || ''} onChange={handleChange} className="glass-input" required/>
           <MultiSelectDropdown label="Subjects" options={subjectOptions} selected={formData.subjectIds || []} onChange={(s) => handleMultiSelectChange('subjectIds', s)} />
-          <MultiSelectDropdown label="Allocated Faculty (Optional)" options={facultyOptions} selected={formData.allocatedFacultyIds || []} onChange={(s) => handleMultiSelectChange('allocatedFacultyIds', s)} />
-          <MultiSelectDropdown label="Allocated Rooms (Optional)" options={roomOptions} selected={formData.allocatedRoomIds || []} onChange={(s) => handleMultiSelectChange('allocatedRoomIds', s)} />
         </>
       );
       case 'departments': return (
