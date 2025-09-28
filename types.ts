@@ -68,10 +68,18 @@ export interface Batch {
   allocatedRoomIds?: string[];
 }
 
+// Represents the rule (Batch, Subject) -> Faculty/Faculties
+export interface FacultyAllocation {
+    id: string;
+    batchId: string;
+    subjectId: string;
+    facultyIds: string[];
+}
+
 export interface ClassAssignment {
   id: string;
   subjectId: string;
-  facultyId: string;
+  facultyIds: string[];
   roomId: string;
   batchId: string;
   day: number; // 0 for Monday, ...
@@ -140,10 +148,26 @@ export interface FacultyAvailability {
     availability: Record<number, number[]>; // day -> slots[]
 }
 
+export interface Substitution {
+    id: string;
+    originalAssignmentId: string;
+    originalFacultyId: string; // The specific faculty member being substituted out of the original assignment
+    substituteFacultyId: string;
+    // This is the key change: the subject taught can be different
+    substituteSubjectId: string; 
+    batchId: string;
+    day: number;
+    slot: number;
+    // A substitution can be for a single day or a date range
+    startDate: string; // YYYY-MM-DD
+    endDate: string; // YYYY-MM-DD
+}
+
 export interface Constraints {
     pinnedAssignments: PinnedAssignment[];
     plannedLeaves: PlannedLeave[];
     facultyAvailability: FacultyAvailability[];
+    substitutions: Substitution[];
 }
 
 export interface GlobalConstraints {

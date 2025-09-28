@@ -1,4 +1,3 @@
-
 # AetherSchedule - Intelligent Timetabling
 
 **AetherSchedule is a smart, AI-powered timetable scheduling platform designed for the complex needs of higher-education institutes.** It leverages a self-tuning, multi-layered AI engine, powered by the Google Gemini API, to generate optimized, conflict-free timetable candidates in minutes, not weeks.
@@ -34,6 +33,7 @@ AetherSchedule is a complete ecosystem designed to address the entire scheduling
 
 ### 🗂️ Centralized Data & User Administration
 - **Unified Data Hub:** A single source of truth for all institutional data: Subjects, Faculty, Rooms, Batches, and Departments, with full CRUD functionality.
+- **Data Portability:** Full import and export of all foundational data (subjects, faculty, rooms, batches, **and users**) via JSON, allowing for easy backups, migrations, or offline editing.
 - **Role-Based Access Control (RBAC):** A robust permission system ensures users only see and interact with the features relevant to their role (Admin, Manager, HOD, Faculty, Student).
 - **Full User Management:** Admins can create, edit, and delete user accounts and assign specific roles.
 - **System Reset Functionality:** A secure 'danger zone' feature for SuperAdmins to reset the application database to its initial seed state.

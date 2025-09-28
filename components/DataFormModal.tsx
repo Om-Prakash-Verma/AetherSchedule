@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { GlassButton } from './GlassButton';
 import { useAppContext } from '../hooks/useAppContext';
 import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
@@ -6,6 +6,7 @@ import { ROLES, DAYS_OF_WEEK } from '../constants';
 import { useToast } from '../hooks/useToast';
 import { GlassSelect } from './ui/GlassSelect';
 import { Modal } from './ui/Modal';
+import type { Subject } from '../types';
 
 type DataType = 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'users' | 'pinned' | 'leaves';
 
@@ -18,7 +19,7 @@ interface DataFormModalProps {
 }
 
 export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, onSave, dataType, initialData }) => {
-  const { subjects, departments, faculty, rooms, batches, timeSlots } = useAppContext();
+  const { subjects, departments, faculty, rooms, batches, timeSlots, facultyAllocations } = useAppContext();
   const [formData, setFormData] = useState<any>({});
   const toast = useToast();
   
@@ -27,8 +28,21 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
     if (dataType === 'users' && data.role !== 'Student') {
         delete data.batchId;
     }
+     // When editing a batch, preload its existing faculty allocations into the form state.
+    if (dataType === 'batches' && data.id) {
+        const existingAllocations = facultyAllocations.filter(fa => fa.batchId === data.id);
+        const allocationsMap = existingAllocations.reduce((acc, curr) => {
+            // Find the subject to check if it's a practical/lab
+            const subject = subjects.find(s => s.id === curr.subjectId);
+            // If it's a lab, the value is an array. Otherwise, it's the first (and only) ID.
+            acc[curr.subjectId] = subject?.type === 'Practical' ? curr.facultyIds : (curr.facultyIds[0] || '');
+            return acc;
+        }, {} as Record<string, string | string[]>);
+        data.allocations = allocationsMap;
+    }
+
     setFormData(data);
-  }, [initialData, isOpen, dataType]);
+  }, [initialData, isOpen, dataType, facultyAllocations, subjects]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -61,6 +75,16 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
       }
   }
 
+  const handleAllocationChange = (subjectId: string, value: string | number | string[]) => {
+      setFormData((prev: any) => ({
+          ...prev,
+          allocations: {
+              ...prev.allocations,
+              [subjectId]: value,
+          }
+      }))
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -70,6 +94,21 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
     }
 
     const dataToSave = { ...formData };
+
+    // Normalize faculty allocations before saving
+    if (dataType === 'batches' && dataToSave.allocations) {
+        const finalAllocations: Record<string, string[]> = {};
+        for (const [subjectId, value] of Object.entries(dataToSave.allocations)) {
+            if (Array.isArray(value)) {
+                finalAllocations[subjectId] = value;
+            } else if (value) { // A single string from GlassSelect
+                finalAllocations[subjectId] = [String(value)];
+            }
+        }
+        dataToSave.allocations = finalAllocations;
+    }
+
+
     if (!initialData?.id) {
         const prefix = dataType === 'pinned' ? 'pin' : dataType === 'leaves' ? 'leave' : dataType.slice(0, 1);
         dataToSave.id = `${prefix}_${Date.now()}`;
@@ -82,6 +121,16 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
   const roomOptions = rooms.map(r => ({ value: r.id, label: r.name }));
   const batchOptions = batches.map(b => ({ value: b.id, label: b.name }));
   const departmentOptions = departments.map(d => ({ value: d.id, label: d.name }));
+
+  const allocatedSubjects = useMemo(() => {
+    if (dataType !== 'batches' || !formData.subjectIds) return [];
+    return subjects.filter(s => formData.subjectIds.includes(s.id));
+  }, [dataType, formData.subjectIds, subjects]);
+
+  const getQualifiedFacultyForSubject = (subjectId: string) => {
+    return faculty.filter(f => f.subjectIds.includes(subjectId)).map(f => ({ value: f.id, label: f.name }));
+  }
+
 
   const renderFields = () => {
     switch (dataType) {
@@ -137,9 +186,46 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
           />
           <input name="semester" type="number" placeholder="Semester" value={formData.semester || ''} onChange={handleChange} className="glass-input" required/>
           <input name="studentCount" type="number" placeholder="Student Count" value={formData.studentCount || ''} onChange={handleChange} className="glass-input" required/>
-          <MultiSelectDropdown label="Subjects" options={subjectOptions} selected={formData.subjectIds || []} onChange={(s) => handleMultiSelectChange('subjectIds', s)} />
-          <MultiSelectDropdown label="Allocated Faculty (Optional)" options={facultyOptions} selected={formData.allocatedFacultyIds || []} onChange={(s) => handleMultiSelectChange('allocatedFacultyIds', s)} />
+          <MultiSelectDropdown label="Curriculum Subjects" options={subjectOptions} selected={formData.subjectIds || []} onChange={(s) => handleMultiSelectChange('subjectIds', s)} />
+          
           <MultiSelectDropdown label="Allocated Rooms (Optional)" options={roomOptions} selected={formData.allocatedRoomIds || []} onChange={(s) => handleMultiSelectChange('allocatedRoomIds', s)} />
+          <p className="text-xs text-text-muted -mt-3 pl-1">If rooms are allocated, the AI will only use these specific rooms for this batch's classes.</p>
+
+          {/* NEW: Faculty Allocation Section with multi-teacher support for labs */}
+          {allocatedSubjects.length > 0 && (
+              <div className="pt-4 mt-4 border-t border-[var(--border)]">
+                  <h3 className="text-lg font-semibold text-white mb-2">Subject-Faculty Allocations</h3>
+                  <p className="text-sm text-text-muted mb-4">Assign a specific faculty member for each subject. For labs, you can select multiple teachers.</p>
+                  <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                      {allocatedSubjects.map((subject: Subject) => {
+                          const qualifiedFaculty = getQualifiedFacultyForSubject(subject.id);
+                          return (
+                            <div key={subject.id} className="grid grid-cols-[1fr,1.2fr] gap-4 items-center">
+                                <label className="font-medium text-white truncate text-sm" title={subject.name}>
+                                    {subject.name}
+                                    {subject.type === 'Practical' && <span className="text-xs text-text-muted ml-1">(Lab)</span>}
+                                </label>
+                                {subject.type === 'Practical' ? (
+                                    <MultiSelectDropdown
+                                        label={subject.name}
+                                        options={qualifiedFaculty}
+                                        selected={formData.allocations?.[subject.id] || []}
+                                        onChange={(value) => handleAllocationChange(subject.id, value)}
+                                    />
+                                ) : (
+                                    <GlassSelect
+                                        placeholder="Auto-Assign"
+                                        value={formData.allocations?.[subject.id] || ''}
+                                        onChange={(value) => handleAllocationChange(subject.id, value)}
+                                        options={qualifiedFaculty}
+                                    />
+                                )}
+                            </div>
+                        )
+                      })}
+                  </div>
+              </div>
+          )}
         </>
       );
       case 'departments': return (
@@ -211,6 +297,7 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
       onClose={onClose}
       title={getTitle()}
       footer={footer}
+      className={dataType === 'batches' ? 'max-w-2xl' : 'max-w-lg'}
     >
         <form id="data-form" onSubmit={handleSubmit} className="space-y-4">
           {renderFields()}

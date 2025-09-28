@@ -46,10 +46,12 @@ export const exportTimetableToCsv = (
             if (assignments && assignments.length > 0) {
                 const cellContent = assignments.map(assignment => {
                     const subject = subjects.find(s => s.id === assignment.subjectId)?.name || 'N/A';
-                    const facultyMember = faculty.find(f => f.id === assignment.facultyId)?.name || 'N/A';
+                    // FIX: Handle facultyIds array to correctly display one or more faculty names.
+                    const facultyNames = faculty.filter(f => assignment.facultyIds.includes(f.id)).map(f => f.name).join(', ');
+                    const facultyDisplay = facultyNames || 'N/A';
                     const room = rooms.find(r => r.id === assignment.roomId)?.name || 'N/A';
                     const batchName = firstBatch.name; // Simplified for now
-                    return `${subject} (${batchName})\\n${facultyMember}\\n@${room}`;
+                    return `${subject} (${batchName})\\n${facultyDisplay}\\n@${room}`;
                 }).join('\\n---\\n');
                 row.push(cellContent);
             } else {
@@ -102,11 +104,14 @@ export const exportTimetableToIcs = (
 
     allAssignments.forEach(assignment => {
         const subject = subjects.find(s => s.id === assignment.subjectId);
-        const facultyMember = faculty.find(f => f.id === assignment.facultyId);
+        // FIX: Handle facultyIds array to correctly find and display one or more faculty members.
+        const facultyMembers = faculty.filter(f => assignment.facultyIds.includes(f.id));
         const room = rooms.find(r => r.id === assignment.roomId);
         
-        if (!subject || !facultyMember || !room) return;
+        if (!subject || facultyMembers.length === 0 || !room) return;
         
+        const facultyNames = facultyMembers.map(f => f.name).join(', ');
+
         // FIX: Use the passed timeSlots array to determine the start time.
         const startHour = parseInt(timeSlots[assignment.slot].split(' ')[0].split(':')[0]);
         
@@ -126,7 +131,7 @@ export const exportTimetableToIcs = (
         icsContent.push(`DTEND:${toIcsDate(endDate)}`);
         icsContent.push(`SUMMARY:${subject.name} (Batch ID: ${assignment.batchId})`);
         icsContent.push(`LOCATION:${room.name}`);
-        icsContent.push(`DESCRIPTION:Subject: ${subject.name}\\nFaculty: ${facultyMember.name}\\nRoom: ${room.name}\\nBatch ID: ${assignment.batchId}`);
+        icsContent.push(`DESCRIPTION:Subject: ${subject.name}\\nFaculty: ${facultyNames}\\nRoom: ${room.name}\\nBatch ID: ${assignment.batchId}`);
         // Recur weekly for a semester (e.g., 15 weeks)
         icsContent.push('RRULE:FREQ=WEEKLY;COUNT=15');
         icsContent.push('END:VEVENT');

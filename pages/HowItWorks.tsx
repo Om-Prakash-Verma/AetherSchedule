@@ -1,15 +1,15 @@
 import React from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import {
-  Users, Shield, Layers, Database, Cpu, Bot, Dna, Lightbulb,
-  Shuffle, Trophy, GitMerge, FileCheck2, UserCheck, CalendarDays, Download,
+  Users, Shield, Database, Cpu, Bot, Dna, Lightbulb,
+  FileCheck2, UserCheck, CalendarDays, Download,
   BookOpen, Building, User, School, Lock, Sliders, BarChart4, Pencil, Send, Eye
 } from 'lucide-react';
 
 const SectionHeader: React.FC<{ icon: React.ElementType; title: string; subtitle: string }> = ({ icon: Icon, title, subtitle }) => (
   <div className="text-center mb-12">
-    <div className="inline-flex items-center justify-center p-4 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-2xl mb-4">
-      <Icon className="h-10 w-10 text-[var(--accent)]" />
+    <div className="inline-flex items-center justify-center p-4 bg-accent/10 border border-accent/20 rounded-2xl mb-4">
+      <Icon className="h-10 w-10 text-accent" />
     </div>
     <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">{title}</h2>
     <p className="text-lg text-text-muted mt-3 max-w-3xl mx-auto">{subtitle}</p>
@@ -25,10 +25,10 @@ const WorkflowStep: React.FC<{
 }> = ({ icon: Icon, step, title, isLast = false, children }) => (
   <div className="relative pl-16">
     {!isLast && (
-      <div className="absolute left-[30px] top-12 bottom-0 w-0.5 bg-border" />
+      <div className="absolute left-[30px] top-12 bottom-0 w-0.5 bg-gradient-to-b from-accent/50 via-accent/20 to-transparent" />
     )}
-    <div className="absolute left-0 top-0 flex items-center justify-center w-[60px] h-[60px] bg-panel-strong border-2 border-[var(--accent)]/50 rounded-full">
-      <Icon className="w-7 h-7 text-[var(--accent)]" />
+    <div className="absolute left-0 top-0 flex items-center justify-center w-[60px] h-[60px] bg-panel-strong border-2 border-accent/50 rounded-full">
+      <Icon className="w-7 h-7 text-accent" />
     </div>
     <div className="ml-4">
       <h3 className="text-2xl font-bold text-white mb-2">{step}. {title}</h3>
@@ -38,8 +38,8 @@ const WorkflowStep: React.FC<{
 );
 
 const SubStepCard: React.FC<{ icon: React.ElementType; title: string; children: React.ReactNode; }> = ({ icon: Icon, title, children }) => (
-    <div className="bg-panel/50 rounded-lg p-4 flex items-start gap-4 border border-transparent hover:border-[var(--accent)]/30 transition-colors h-full">
-        <Icon className="w-8 h-8 text-[var(--accent)]/80 shrink-0 mt-1" />
+    <div className="bg-panel/50 rounded-lg p-4 flex items-start gap-4 border border-transparent hover:border-accent/30 transition-colors h-full">
+        <Icon className="w-8 h-8 text-accent/80 shrink-0 mt-1" />
         <div>
             <h4 className="font-semibold text-white">{title}</h4>
             <p className="text-sm text-text-muted">{children}</p>
@@ -55,7 +55,7 @@ const HowItWorks: React.FC = () => {
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white">
           The Journey of a Timetable
         </h1>
-        <p className="text-xl text-[var(--accent)] mt-2">From Chaos to Clarity</p>
+        <p className="text-xl text-accent mt-2">From Chaos to Clarity</p>
         <p className="max-w-4xl mx-auto mt-6 text-lg text-text-muted">
           AetherSchedule transforms the chaotic, headache-inducing task of university timetabling into an intelligent, automated, and collaborative process. Follow the journey of how thousands of individual requirements become one perfectly synchronized master schedule.
         </p>
@@ -83,13 +83,13 @@ const HowItWorks: React.FC = () => {
             
             <WorkflowStep icon={Cpu} step="03" title="The Magic of Intelligent Automation">
                 <p>With the blueprint and rules in place, the human operator simply selects the student batches and clicks "Generate." This unleashes a powerful hyper-heuristic genetic algorithm, guided by Google's Gemini, that works like a team of a million schedulers exploring every possibility at once.</p>
-                <GlassPanel className="p-6 mt-4 border border-[var(--accent)]/20">
+                <GlassPanel className="p-6 mt-4 border border-accent/20">
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                          <SubStepCard icon={Bot} title="The Game Plan">Before starting, Gemini creates a smart game plan. It decides to first explore a wide variety of solutions, then focus on improving the best ones it finds, and finally, apply a deep polish to the top contenders. This makes the process incredibly efficient.</SubStepCard>
                          <SubStepCard icon={Dna} title="Survival of the Fittest">The AI creates an initial "population" of hundreds of random (but valid) timetables. It then rapidly evolves them over thousands of generations. The best schedules "survive" and combine their traits to create even better offspring, while weak schedules are discarded.</SubStepCard>
                      </div>
                      <div className="text-center my-4">
-                        <p className="font-mono text-[var(--accent)] text-sm">EVOLUTIONARY CORE</p>
+                        <p className="font-mono text-accent text-sm">EVOLUTIONARY CORE</p>
                      </div>
                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                          <SubStepCard icon={BarChart4} title="The Judge">How does it know which is "best"? Every single timetable is given a fitness score. It loses points for undesirable traits (like a 4-hour gap for a student) and is rewarded for efficiency. The algorithm is obsessed with achieving the highest possible score.</SubStepCard>
@@ -125,19 +125,19 @@ const HowItWorks: React.FC = () => {
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <GlassPanel className="p-6">
-                <h4 className="font-bold text-[var(--accent)] text-lg">SuperAdmin</h4>
+                <h4 className="font-bold text-accent text-lg">SuperAdmin</h4>
                 <p className="text-sm text-text-muted mt-1">The Architect. Configures the system, manages all user accounts, and has a bird's-eye view of the entire scheduling process across all departments.</p>
             </GlassPanel>
             <GlassPanel className="p-6">
-                <h4 className="font-bold text-[var(--accent)] text-lg">Timetable Manager</h4>
+                <h4 className="font-bold text-accent text-lg">Timetable Manager</h4>
                 <p className="text-sm text-text-muted mt-1">The Conductor. Orchestrates the process, from validating core data to running the AI engine and giving the final, institution-wide approval.</p>
             </GlassPanel>
             <GlassPanel className="p-6">
-                <h4 className="font-bold text-[var(--accent)] text-lg">Department Head</h4>
+                <h4 className="font-bold text-accent text-lg">Department Head</h4>
                 <p className="text-sm text-text-muted mt-1">The Local Expert. Manages the faculty, courses, and constraints for their own department, ensuring their unique needs are met before submitting schedules for final review.</p>
             </GlassPanel>
             <GlassPanel className="p-6">
-                <h4 className="font-bold text-[var(--accent)] text-lg">Faculty & Student</h4>
+                <h4 className="font-bold text-accent text-lg">Faculty & Student</h4>
                 <p className="text-sm text-text-muted mt-1">The End Users. Experience the final product with a clean, personalized, and always-accessible view of their schedule. They get the right information, without any of the clutter.</p>
             </GlassPanel>
         </div>

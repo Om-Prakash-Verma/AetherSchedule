@@ -57,6 +57,15 @@ export const batches = pgTable('batches', {
     allocatedRoomIds: jsonb('allocated_room_ids').$type<string[]>(),
 });
 
+// Table to store the (Batch, Subject) -> Faculty mapping. Now supports multiple faculty.
+export const facultyAllocations = pgTable('faculty_allocations', {
+    id: varchar('id').primaryKey(),
+    batchId: varchar('batch_id').notNull().references(() => batches.id, { onDelete: 'cascade' }),
+    subjectId: varchar('subject_id').notNull().references(() => subjects.id, { onDelete: 'cascade' }),
+    facultyIds: jsonb('faculty_ids').$type<string[]>().notNull(),
+});
+
+
 export const timetables = pgTable('timetables', {
     id: varchar('id').primaryKey(),
     batchIds: jsonb('batch_ids').$type<string[]>().notNull(),
@@ -126,6 +135,20 @@ export const facultyAvailability = pgTable('faculty_availability', {
     availability: jsonb('availability').$type<Record<number, number[]>>().notNull(),
 });
 
+export const substitutions = pgTable('substitutions', {
+    id: varchar('id').primaryKey(),
+    originalAssignmentId: varchar('original_assignment_id').notNull(),
+    originalFacultyId: varchar('original_faculty_id').notNull().references(() => faculty.id, { onDelete: 'cascade' }),
+    substituteFacultyId: varchar('substitute_faculty_id').notNull().references(() => faculty.id, { onDelete: 'cascade' }),
+    substituteSubjectId: varchar('substitute_subject_id').notNull().references(() => subjects.id, { onDelete: 'cascade' }),
+    batchId: varchar('batch_id').notNull().references(() => batches.id, { onDelete: 'cascade' }),
+    day: integer('day').notNull(),
+    slot: integer('slot').notNull(),
+    startDate: text('start_date').notNull(),
+    endDate: text('end_date').notNull(),
+});
+
+
 // --- RELATIONS ---
 
 export const usersRelations = relations(users, ({ one }) => ({
@@ -146,10 +169,22 @@ export const facultyRelations = relations(faculty, ({ one }) => ({
 	}),
 }));
 
-export const batchesRelations = relations(batches, ({ one }) => ({
+export const batchesRelations = relations(batches, ({ one, many }) => ({
     department: one(departments, {
         fields: [batches.departmentId],
         references: [departments.id],
+    }),
+    allocations: many(facultyAllocations),
+}));
+
+export const facultyAllocationsRelations = relations(facultyAllocations, ({ one }) => ({
+    batch: one(batches, {
+        fields: [facultyAllocations.batchId],
+        references: [batches.id],
+    }),
+    subject: one(subjects, {
+        fields: [facultyAllocations.subjectId],
+        references: [subjects.id],
     }),
 }));
 

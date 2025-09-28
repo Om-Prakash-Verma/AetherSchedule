@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
-import { Save, RefreshCw, PlusCircle, Cpu, Trash2 } from 'lucide-react';
+import { Save, RefreshCw, PlusCircle, Cpu, Trash2, Download, Upload } from 'lucide-react';
 import * as api from '../services';
 import type { GlobalConstraints, User, TimetableSettings } from '../types';
 import { Slider } from '../components/ui/Slider';
@@ -22,9 +22,11 @@ const Settings: React.FC = () => {
     const [localTimetableSettings, setLocalTimetableSettings] = useState<TimetableSettings | null>(timetableSettings);
     const [isSaving, setIsSaving] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
+    const [isImporting, setIsImporting] = useState(false);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const toast = useToast();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         setLocalConstraints(globalConstraints);
@@ -128,7 +130,6 @@ const Settings: React.FC = () => {
         setLocalTimetableSettings(prev => prev ? { ...prev, breaks: newBreaks } : null);
     };
 
-
     const handleResetData = async () => {
         if (!window.confirm("Are you sure you want to reset all application data? This will restore the initial seed data and cannot be undone.")) return;
         setIsResetting(true);
@@ -143,6 +144,46 @@ const Settings: React.FC = () => {
         }
     };
     
+    const handleExport = () => {
+        toast.info("Preparing your data for download...");
+        window.location.href = '/api/data/export';
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        // Clear file input value to allow re-selecting the same file
+        const resetFileInput = () => { if(fileInputRef.current) fileInputRef.current.value = ""; };
+
+        if (!window.confirm("This will overwrite existing data like subjects, faculty, and rooms based on the import file. This action cannot be undone. Are you sure you want to continue?")) {
+            resetFileInput();
+            return;
+        }
+
+        setIsImporting(true);
+        try {
+            const text = await file.text();
+            const data = JSON.parse(text);
+            
+            if (!data.subjects || !data.faculty || !data.rooms || !data.batches || !data.departments || !data.facultyAllocations || !data.users) {
+                throw new Error("Invalid file format. The file is missing required data sections (including users).");
+            }
+
+            const result = await api.importDataManagementData(data);
+            await refreshData();
+            toast.success(result.message || 'Data imported successfully!');
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to import data.');
+        } finally {
+            setIsImporting(false);
+            resetFileInput();
+        }
+    };
+
     const userColumns: { accessor: keyof User; header: string }[] = [
         { accessor: 'name', header: 'Name' },
         { accessor: 'email', header: 'Email' },
@@ -274,7 +315,26 @@ const Settings: React.FC = () => {
         }
         if (activeTab === 'system') {
             return (
-                <div className="border border-red-500/30 rounded-lg">
+                <>
+                <div className="border border-[var(--border)] rounded-lg">
+                     <div className="p-4">
+                        <h3 className="text-lg font-bold text-white">Data Portability</h3>
+                    </div>
+                    <div className="p-4 border-t border-[var(--border)] bg-panel-strong flex flex-wrap justify-between items-center gap-4">
+                        <div>
+                            <p className="font-semibold text-white">Import / Export Foundational Data</p>
+                            <p className="text-sm text-text-muted">Export or import subjects, faculty, rooms, batches, etc., via a JSON file. Useful for backups or migrations.</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <GlassButton variant="secondary" icon={Download} onClick={handleExport}>Export Data</GlassButton>
+                            <GlassButton variant="secondary" icon={Upload} onClick={handleImportClick} disabled={isImporting}>
+                                {isImporting ? 'Importing...' : 'Import Data'}
+                            </GlassButton>
+                            <input type="file" ref={fileInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
+                        </div>
+                    </div>
+                </div>
+                <div className="border border-red-500/30 rounded-lg mt-6">
                     <div className="p-4">
                         <h3 className="text-lg font-bold text-red-400">Danger Zone</h3>
                     </div>
@@ -288,6 +348,7 @@ const Settings: React.FC = () => {
                         </GlassButton>
                     </div>
                 </div>
+                </>
             )
         }
     }

@@ -6,8 +6,8 @@ import {
 
 const SectionHeader: React.FC<{ icon: React.ElementType; title: string; subtitle: string }> = ({ icon: Icon, title, subtitle }) => (
   <div className="text-center mb-12">
-    <div className="inline-flex items-center justify-center p-4 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-2xl mb-4">
-      <Icon className="h-10 w-10 text-[var(--accent)]" />
+    <div className="inline-flex items-center justify-center p-4 bg-accent/10 border border-accent/20 rounded-2xl mb-4">
+      <Icon className="h-10 w-10 text-accent" />
     </div>
     <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white">{title}</h2>
     <p className="text-lg text-text-muted mt-3 max-w-3xl mx-auto">{subtitle}</p>
@@ -15,10 +15,10 @@ const SectionHeader: React.FC<{ icon: React.ElementType; title: string; subtitle
 );
 
 const InfoCard: React.FC<{ icon: React.ElementType; title: string; children: React.ReactNode; }> = ({ icon: Icon, title, children }) => (
-    <GlassPanel className="p-6 h-full border border-transparent hover:border-[var(--accent)]/30 transition-colors">
+    <GlassPanel className="p-6 h-full border border-transparent hover:border-accent/30 transition-colors">
         <div className="flex items-start gap-4">
-            <div className="p-2 bg-[var(--accent)]/10 border border-[var(--accent)]/20 rounded-lg">
-                <Icon className="w-6 h-6 text-[var(--accent)]" />
+            <div className="p-2 bg-accent/10 border border-accent/20 rounded-lg">
+                <Icon className="w-6 h-6 text-accent" />
             </div>
             <div>
                 <h3 className="font-bold text-white text-lg">{title}</h3>
@@ -28,13 +28,16 @@ const InfoCard: React.FC<{ icon: React.ElementType; title: string; children: Rea
     </GlassPanel>
 );
 
-const FlowStep: React.FC<{ number: string, title: string, children: React.ReactNode }> = ({ number, title, children }) => (
-    <div className="flex items-start gap-4">
-        <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-[var(--accent)]/20 border border-[var(--accent)]/30 font-bold text-[var(--accent)]">{number}</div>
-        <div>
-            <h4 className="font-bold text-white">{title}</h4>
-            <p className="text-sm text-text-muted">{children}</p>
+const FlowStep: React.FC<{ number: string, title: string, children: React.ReactNode, isLast?: boolean }> = ({ number, title, children, isLast }) => (
+    <div>
+        <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-accent/20 border border-accent/30 font-bold text-accent">{number}</div>
+            <div>
+                <h4 className="font-bold text-white">{title}</h4>
+                <p className="text-sm text-text-muted">{children}</p>
+            </div>
         </div>
+         {!isLast && <div className="pl-5 h-8"><div className="w-px h-full bg-border ml-px"/></div>}
     </div>
 );
 
@@ -45,7 +48,7 @@ const AlgorithmDeepDive: React.FC = () => {
         <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white">
           Under the Hood: The AetherSchedule AI Engine
         </h1>
-        <p className="text-xl text-[var(--accent)] mt-2">A Symphony of Algorithms and Intelligence</p>
+        <p className="text-xl text-accent mt-2">A Symphony of Algorithms and Intelligence</p>
         <p className="max-w-4xl mx-auto mt-6 text-lg text-text-muted">
           University timetabling is a notoriously complex challenge—a class of problem computer scientists call "NP-hard." A brute-force approach is impossible. Our engine employs a sophisticated, multi-layered strategy, combining battle-tested algorithms with cutting-edge generative AI to find optimal solutions in minutes, not millennia.
         </p>
@@ -124,24 +127,17 @@ const AlgorithmDeepDive: React.FC = () => {
           subtitle="Here’s how these layers work in concert when a user clicks 'Generate'."
         />
         <GlassPanel className="max-w-4xl mx-auto p-8">
-            <div className="space-y-6">
+            <div className="space-y-0">
                 <FlowStep number="1" title="User Request">The process starts when a Timetable Manager selects batches and clicks 'Generate'.</FlowStep>
-                <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
                 <FlowStep number="2" title="Gemini Devises Strategy">Gemini analyzes the request and provides a high-level, multi-phase plan for the Genetic Algorithm to follow.</FlowStep>
-                <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
                 <FlowStep number="3" title="Initial Population Created">The engine generates hundreds of random, but valid, timetables to form the starting gene pool.</FlowStep>
-                <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
                 <FlowStep number="4" title="Evolutionary Loop Begins">For a set number of generations, the engine performs a cycle of Selection, Crossover, and Mutation, guided by Gemini's strategy and the fitness score of each timetable.</FlowStep>
-                <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
                 <FlowStep number="5" title="Stagnation Check & Intervention">During the loop, if the top score doesn't improve for several generations, Gemini is called upon for a creative intervention to un-stick the process.</FlowStep>
-                <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
                 <FlowStep number="6" title="Final Candidates Emerge">After the loop completes, the population contains highly evolved, high-scoring timetables. The engine selects the top 5 distinct candidates.</FlowStep>
-                 <div className="pl-14"><ArrowDown className="text-[var(--accent)]"/></div>
-                <FlowStep number="7" title="Results Presented to User">The top candidates, each with a detailed scorecard of its metrics (student gaps, etc.), are presented to the user for final review and refinement.</FlowStep>
+                <FlowStep number="7" title="Results Presented to User" isLast={true}>The top candidates, each with a detailed scorecard of its metrics (student gaps, etc.), are presented to the user for final review and refinement.</FlowStep>
             </div>
         </GlassPanel>
       </section>
-
     </div>
   );
 };

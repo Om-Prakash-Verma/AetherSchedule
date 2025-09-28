@@ -21,8 +21,8 @@ const TABS: { id: DataType, label: string }[] = [
 
 const DataManagement: React.FC = () => {
     const { 
-        subjects, faculty, rooms, batches, departments, users, refreshData, loadingStates,
-        fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments, fetchUsers 
+        subjects, faculty, rooms, batches, departments, users, facultyAllocations, refreshData, loadingStates,
+        fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments, fetchUsers, fetchFacultyAllocations
     } = useAppContext();
     const [activeTab, setActiveTab] = useState<DataType>('subjects');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,8 +48,9 @@ const DataManagement: React.FC = () => {
             fetchDepartments();
             fetchFaculty();
             fetchRooms();
+            fetchFacultyAllocations(); // NEW: Fetch allocations when viewing batches
         }
-    }, [activeTab, fetcherMap]);
+    }, [activeTab, fetcherMap, fetchFacultyAllocations]);
 
     const dataMap = { subjects, faculty, rooms, batches, departments };
     const currentData = dataMap[activeTab];
@@ -74,7 +75,7 @@ const DataManagement: React.FC = () => {
     }, [activeTab, refreshData, toast]);
     
     const handleDelete = useCallback(async (item: any) => {
-         if (!window.confirm("Are you sure you want to delete this item?")) return;
+         if (!window.confirm("Are you sure you want to delete this item? This may also delete related data.")) return;
         try {
             const deleteFns: Record<DataType, (id: string) => Promise<any>> = {
                 subjects: api.deleteSubject,
@@ -149,25 +150,16 @@ const DataManagement: React.FC = () => {
             { accessor: 'semester', header: 'Semester' },
             { accessor: 'studentCount', header: 'Students' },
             { 
-                accessor: 'allocatedFacultyIds', 
-                header: 'Allocated Faculty', 
+                header: 'Faculty Allocations', 
+                accessor: 'id',
                 render: (b: Batch) => {
-                    if (!b.allocatedFacultyIds || b.allocatedFacultyIds.length === 0) {
-                        return <span className="text-text-muted">All Available</span>;
+                    const allocationsForBatch = facultyAllocations.filter(fa => fa.batchId === b.id);
+                    if (allocationsForBatch.length === 0) {
+                        return <span className="text-text-muted">None (AI will assign)</span>
                     }
-                    const names = b.allocatedFacultyIds.map(id => faculty.find(f => f.id === id)?.name || id).join(', ');
-                    return <span title={names}>{`${b.allocatedFacultyIds.length} specified`}</span>;
-                }
-            },
-            { 
-                accessor: 'allocatedRoomIds', 
-                header: 'Allocated Rooms', 
-                render: (b: Batch) => {
-                    if (!b.allocatedRoomIds || b.allocatedRoomIds.length === 0) {
-                        return <span className="text-text-muted">All Available</span>;
-                    }
-                    const names = b.allocatedRoomIds.map(id => rooms.find(r => r.id === id)?.name || id).join(', ');
-                    return <span title={names}>{`${b.allocatedRoomIds.length} specified`}</span>;
+                    const assignedSubjectsCount = allocationsForBatch.length;
+                    const totalSubjectsCount = b.subjectIds.length;
+                    return <span className="text-white">{`${assignedSubjectsCount} of ${totalSubjectsCount} subjects allocated`}</span>
                 }
             },
         ],
@@ -175,7 +167,7 @@ const DataManagement: React.FC = () => {
             { accessor: 'code', header: 'Code' },
             { accessor: 'name', header: 'Name' },
         ],
-    }), [faculty, subjects, departments, users, rooms]);
+    }), [faculty, subjects, departments, users, rooms, facultyAllocations]);
     
     const addButtonState = useMemo(() => {
         const typeName = TABS.find(t => t.id === activeTab)?.label.slice(0, -1);

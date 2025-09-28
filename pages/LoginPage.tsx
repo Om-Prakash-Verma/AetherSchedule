@@ -10,9 +10,10 @@ const quickLoginUsers = [
   { label: 'Super Admin', email: 'super.admin@test.com' },
   { label: 'Manager', email: 'manager@test.com' },
   { label: 'HOD (CS)', email: 'cs.hod@test.com' },
-  { label: 'HOD (EE)', email: 'ee.hod@test.com' },
-  { label: 'Faculty (P. Singhal)', email: 'ms_pooja_singhal@test.com' },
   { label: 'Faculty (Swati)', email: 'ms_swati@test.com' },
+  // FIX: Restored the student quick-login button to allow demonstration of student views.
+  { label: 'Student (CS S3 A)', email: 'cs_s3_a@test.com' },
+  { label: 'Faculty (P. Singhal)', email: 'ms_pooja_singhal@test.com' },
 ];
 
 const LoginPage: React.FC<{ onBackToHome: () => void; }> = ({ onBackToHome }) => {

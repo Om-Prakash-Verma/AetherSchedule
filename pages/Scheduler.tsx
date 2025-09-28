@@ -2,10 +2,11 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { BatchSelectorModal } from '../components/BatchSelectorModal';
+import { SubstituteModal } from '../components/SubstituteModal';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
-import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid } from '../types';
+import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid, Substitution } from '../types';
 import { Zap, Save, ChevronLeft, ChevronRight, Download, Calendar, Send, Check, X, Loader2, ChevronDown } from 'lucide-react';
 import { TimetableView } from '../components/TimetableView';
 import { exportTimetableToCsv, exportTimetableToIcs } from '../utils/export';
@@ -32,8 +33,8 @@ const flattenTimetable = (timetable: TimetableGrid): ClassAssignment[] => {
 
 const Scheduler: React.FC = () => {
     const { 
-        user, batches, subjects, faculty, rooms, departments, generatedTimetables, refreshData, timeSlots,
-        fetchBatches, fetchSubjects, fetchFaculty, fetchRooms, fetchDepartments, fetchTimetables 
+        user, batches, subjects, faculty, rooms, departments, generatedTimetables, refreshData, timeSlots, constraints,
+        fetchBatches, fetchSubjects, fetchFaculty, fetchRooms, fetchDepartments, fetchTimetables, fetchSubstitutions
     } = useAppContext();
     const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -45,6 +46,8 @@ const Scheduler: React.FC = () => {
     const [isDirty, setIsDirty] = useState(false);
     const [conflictMap, setConflictMap] = useState<Map<string, Conflict[]>>(new Map());
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+    const [isSubstituteModalOpen, setIsSubstituteModalOpen] = useState(false);
+    const [substituteTarget, setSubstituteTarget] = useState<ClassAssignment | null>(null);
     const toast = useToast();
     
     useEffect(() => {
@@ -55,7 +58,8 @@ const Scheduler: React.FC = () => {
         fetchSubjects();
         fetchFaculty();
         fetchRooms();
-    }, [fetchBatches, fetchDepartments, fetchTimetables, fetchSubjects, fetchFaculty, fetchRooms]);
+        fetchSubstitutions();
+    }, [fetchBatches, fetchDepartments, fetchTimetables, fetchSubjects, fetchFaculty, fetchRooms, fetchSubstitutions]);
 
     const batchOptions = useMemo(() => {
         return departments.map(dept => ({
@@ -87,8 +91,23 @@ const Scheduler: React.FC = () => {
             .filter(tt => tt.status === 'Approved' && tt.id !== currentTimetableId)
             .flatMap(tt => flattenTimetable(tt.timetable));
             
-        return checkConflicts([...draftAssignments, ...approvedAssignments], faculty, rooms);
-    }, [generatedTimetables, faculty, rooms]);
+        const allApprovedAssignments = generatedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
+        
+        // CRITICAL FIX: The temporary assignment object created for a substitution
+        // must use `facultyIds: [sub.substituteFacultyId]` to match the `ClassAssignment` type.
+        // The previous code used `facultyId`, which caused the conflict checker to crash.
+        const substitutionAssignments: ClassAssignment[] = constraints.substitutions.map(sub => ({
+            id: sub.id,
+            subjectId: sub.substituteSubjectId,
+            facultyIds: [sub.substituteFacultyId],
+            roomId: allApprovedAssignments.find(a => a.id === sub.originalAssignmentId)?.roomId || '',
+            batchId: sub.batchId,
+            day: sub.day,
+            slot: sub.slot,
+        }));
+            
+        return checkConflicts(draftAssignments, faculty, rooms, [...approvedAssignments, ...substitutionAssignments]);
+    }, [generatedTimetables, faculty, rooms, constraints.substitutions]);
     
     useEffect(() => {
         if (selectedTimetable) {
@@ -253,6 +272,27 @@ const Scheduler: React.FC = () => {
         }
     }, [comment, selectedTimetable, user, refreshData, toast]);
     
+    const handleFindSubstitute = (assignment: ClassAssignment) => {
+        setSubstituteTarget(assignment);
+        setIsSubstituteModalOpen(true);
+    };
+
+    const handleCreateSubstitution = async (substitution: Omit<Substitution, 'id'>) => {
+        try {
+            const newSub: Substitution = {
+                ...substitution,
+                id: `sub_${Date.now()}`
+            };
+            await api.createSubstitution(newSub);
+            await refreshData();
+            toast.success("Substitution created successfully.");
+            setIsSubstituteModalOpen(false);
+            setSubstituteTarget(null);
+        } catch(e: any) {
+            toast.error(e.message || "Failed to create substitution.");
+        }
+    };
+
     const canSubmit = user?.role === 'DepartmentHead' || user?.role === 'TimetableManager' || user?.role === 'SuperAdmin';
     const canApprove = user?.role === 'TimetableManager' || user?.role === 'SuperAdmin';
     
@@ -379,7 +419,9 @@ const Scheduler: React.FC = () => {
                                                     timetableData={singleBatchTimetable}
                                                     isEditable={editedTimetable.status === 'Draft'}
                                                     onDropAssignment={handleDropAssignment}
+                                                    onFindSubstitute={handleFindSubstitute}
                                                     conflictMap={conflictMap}
+                                                    substitutions={constraints.substitutions}
                                                 />
                                             </div>
                                         );
@@ -445,6 +487,14 @@ const Scheduler: React.FC = () => {
                 groupedOptions={batchOptions}
                 initialSelected={selectedBatchIds}
             />
+            {substituteTarget && (
+                 <SubstituteModal
+                    isOpen={isSubstituteModalOpen}
+                    onClose={() => setIsSubstituteModalOpen(false)}
+                    onConfirm={handleCreateSubstitution}
+                    targetAssignment={substituteTarget}
+                />
+            )}
         </>
     );
 };

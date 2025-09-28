@@ -1,7 +1,7 @@
 // This file provides a mock API service that can be used for frontend development without a running backend.
 // It simulates the API by managing an in-memory copy of the application's data using localStorage.
 
-import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableGrid, TimetableSettings } from '../types';
+import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableGrid, TimetableSettings, FacultyAllocation } from '../types';
 import { runOptimization } from '../core/schedulerEngine';
 // FIX: Removed TIME_SLOTS import as it's no longer a constant and is generated from settings.
 import { DAYS_OF_WEEK } from '../constants';
@@ -52,11 +52,11 @@ export const runScheduler = async (batchIds: string[]): Promise<GeneratedTimetab
       allFaculty: db.faculty, 
       allRooms: db.rooms,
       approvedTimetables,
-      constraints: { 
-          pinnedAssignments: db.pinnedAssignments,
-          plannedLeaves: db.plannedLeaves,
-          facultyAvailability: db.facultyAvailability,
-      },
+      // FIX: Pass the entire constraints object from the mock DB to satisfy the `Constraints` type.
+      // This also corrects the invalid property access (e.g., `db.pinnedAssignments`).
+      constraints: db.constraints,
+      // FIX: Add missing facultyAllocations property to satisfy the SchedulerInput type.
+      facultyAllocations: db.facultyAllocations,
       globalConstraints: db.globalConstraints,
       days: DAYS_OF_WEEK, 
       // FIX: The scheduler engine now expects timetableSettings, not a static slots array.

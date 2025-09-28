@@ -1,4 +1,4 @@
-import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableFeedback, TimetableSettings, Constraints } from '../types';
+import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableFeedback, TimetableSettings, Constraints, Substitution, ClassAssignment, FacultyAllocation } from '../types';
 
 const apiFetch = async (url: string, options: RequestInit = {}) => {
     const response = await fetch(url, {
@@ -33,6 +33,7 @@ export const getBatches = (): Promise<Batch[]> => apiFetch('/api/batches');
 export const getUsers = (): Promise<User[]> => apiFetch('/api/users');
 export const getTimetables = (): Promise<GeneratedTimetable[]> => apiFetch('/api/timetables');
 export const getConstraints = (): Promise<Constraints> => apiFetch('/api/constraints');
+export const getFacultyAllocations = (): Promise<FacultyAllocation[]> => apiFetch('/api/faculty-allocations');
 export const getSettings = (): Promise<{ globalConstraints: GlobalConstraints, timetableSettings: TimetableSettings}> => apiFetch('/api/settings');
 
 
@@ -90,6 +91,22 @@ export const saveFacultyAvailability = (data: FacultyAvailability): Promise<Facu
     });
 };
 
+// --- SUBSTITUTIONS ---
+export const findSubstitutes = (assignmentId: string): Promise<any[]> => {
+    return apiFetch('/api/substitutes/find', {
+        method: 'POST',
+        body: JSON.stringify({ assignmentId }),
+    });
+};
+
+export const createSubstitution = (substitution: Omit<Substitution, 'id'>): Promise<Substitution> => {
+    return apiFetch('/api/substitutes', {
+        method: 'POST',
+        body: JSON.stringify(substitution),
+    });
+};
+
+
 // --- SETTINGS ---
 export const saveGlobalConstraints = (newGlobalConstraints: GlobalConstraints): Promise<GlobalConstraints> => {
     return apiFetch('/api/settings/global', {
@@ -108,5 +125,13 @@ export const saveTimetableSettings = (newTimetableSettings: TimetableSettings): 
 export const resetData = (): Promise<{ success: boolean }> => {
     return apiFetch('/api/reset-db', {
         method: 'POST',
+    });
+};
+
+// --- DATA PORTABILITY (NEW) ---
+export const importDataManagementData = (data: any): Promise<{ success: boolean; message: string }> => {
+    return apiFetch('/api/data/import', {
+        method: 'POST',
+        body: JSON.stringify(data),
     });
 };

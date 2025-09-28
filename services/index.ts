@@ -1,8 +1,8 @@
 import * as realApi from './apiService';
 
-// This application is now configured to always use the real API service.
-// The mock service has been removed to ensure connection to the real-time database
-// during both development and production.
+// This file acts as the single entry point for all API service functions.
+// It re-exports all functions from the real API service, abstracting away the
+// implementation details from the rest of the application.
 export const {
     login,
     getSubjects,
@@ -13,6 +13,7 @@ export const {
     getUsers,
     getTimetables,
     getConstraints,
+    getFacultyAllocations, // NEW: Export the new service
     getSettings,
     runScheduler,
     saveTimetable,
@@ -35,7 +36,10 @@ export const {
     savePlannedLeave,
     deletePlannedLeave,
     saveFacultyAvailability,
+    findSubstitutes,
+    createSubstitution,
     saveGlobalConstraints,
     saveTimetableSettings,
     resetData,
+    importDataManagementData, // NEW
 } = realApi;

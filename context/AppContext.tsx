@@ -22,17 +22,19 @@ import type {
   Constraints,
   GlobalConstraints,
   TimetableSettings,
+  Substitution,
+  FacultyAllocation, // NEW: Import type
 } from '../types';
 import { generateTimeSlots } from '../utils/time';
 
 type LoadingStates = {
-  [key in 'users' | 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'timetables' | 'constraints' | 'settings']: boolean;
+  [key in 'users' | 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'timetables' | 'constraints' | 'settings' | 'substitutions' | 'facultyAllocations']: boolean;
 }
 
 interface AppContextType {
   user: User | null;
   users: User[];
-  isLoading: boolean; // For initial app shell auth check
+  isLoading: boolean;
   loadingStates: LoadingStates;
   currentPage: Page;
   subjects: Subject[];
@@ -42,6 +44,7 @@ interface AppContextType {
   departments: Department[];
   generatedTimetables: GeneratedTimetable[];
   constraints: Constraints;
+  facultyAllocations: FacultyAllocation[]; // NEW: Add to context
   globalConstraints: GlobalConstraints | null;
   timetableSettings: TimetableSettings | null;
   timeSlots: string[];
@@ -56,7 +59,6 @@ interface AppContextType {
   toggleSidebar: () => void;
   toggleSidebarCollapse: () => void;
   
-  // Data fetching functions
   fetchUsers: () => Promise<void>;
   fetchSubjects: () => Promise<void>;
   fetchFaculty: () => Promise<void>;
@@ -65,8 +67,9 @@ interface AppContextType {
   fetchDepartments: () => Promise<void>;
   fetchTimetables: () => Promise<void>;
   fetchConstraints: () => Promise<void>;
+  fetchSubstitutions: () => Promise<void>;
+  fetchFacultyAllocations: () => Promise<void>; // NEW: Add fetcher
 
-  // Combined refresh
   refreshData: () => Promise<void>;
   
   setGlobalConstraints: React.Dispatch<React.SetStateAction<GlobalConstraints | null>>;
@@ -79,6 +82,7 @@ const defaultConstraints: Constraints = {
   pinnedAssignments: [],
   plannedLeaves: [],
   facultyAvailability: [],
+  substitutions: [],
 };
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
@@ -86,7 +90,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [isLoading, setIsLoading] = useState(true);
   const [appInitializationError, setAppInitializationError] = useState<string | null>(null);
   
-  // --- Granular State ---
   const [users, setUsers] = useState<User[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [faculty, setFaculty] = useState<Faculty[]>([]);
@@ -95,29 +98,29 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [generatedTimetables, setGeneratedTimetables] = useState<GeneratedTimetable[]>([]);
   const [constraints, setConstraints] = useState<Constraints>(defaultConstraints);
+  const [facultyAllocations, setFacultyAllocations] = useState<FacultyAllocation[]>([]); // NEW
   const [globalConstraints, setGlobalConstraints] = useState<GlobalConstraints | null>(null);
   const [timetableSettings, setTimetableSettings] = useState<TimetableSettings | null>(null);
   const [timeSlots, setTimeSlots] = useState<string[]>([]);
 
-  // Page state
   const [currentPage, setCurrentPage] = useState<Page>('Dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   
   const [loadingStates, setLoadingStates] = useState<LoadingStates>({
     users: false, subjects: false, faculty: false, rooms: false, batches: false, 
-    departments: false, timetables: false, constraints: false, settings: false
+    departments: false, timetables: false, constraints: false, settings: false,
+    substitutions: false, facultyAllocations: false,
   });
 
   const toast = useToast();
 
-  // Ref to track if data has been fetched to prevent re-fetches
   const fetchedRef = useRef({
      users: false, subjects: false, faculty: false, rooms: false, batches: false, 
-     departments: false, timetables: false, constraints: false
+     departments: false, timetables: false, constraints: false, substitutions: false,
+     facultyAllocations: false,
   });
 
-  // --- Optimized Initial Load ---
   const loadInitialShell = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -137,24 +140,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, [toast]);
 
-  useEffect(() => {
-    loadInitialShell();
-  }, [loadInitialShell]);
-  
-  useEffect(() => {
-    if(timetableSettings) {
-        setTimeSlots(generateTimeSlots(timetableSettings));
-    }
-  }, [timetableSettings]);
+  useEffect(() => { loadInitialShell(); }, [loadInitialShell]);
+  useEffect(() => { if(timetableSettings) setTimeSlots(generateTimeSlots(timetableSettings)); }, [timetableSettings]);
 
-  // --- Granular On-Demand Fetching Functions ---
   const createFetcher = <T,>(
     key: keyof LoadingStates, 
     apiCall: () => Promise<T>, 
     setter: (data: T) => void
   ) => useCallback(async () => {
     if (fetchedRef.current[key as keyof typeof fetchedRef.current]) return;
-
     setLoadingStates(s => ({...s, [key]: true }));
     try {
       const data = await apiCall();
@@ -174,85 +168,69 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const fetchBatches = createFetcher('batches', api.getBatches, setBatches);
   const fetchDepartments = createFetcher('departments', api.getDepartments, setDepartments);
   const fetchTimetables = createFetcher('timetables', api.getTimetables, setGeneratedTimetables);
-  const fetchConstraints = createFetcher('constraints', api.getConstraints, setConstraints);
+  const fetchFacultyAllocations = createFetcher('facultyAllocations', api.getFacultyAllocations, setFacultyAllocations);
+  
+  const fetchConstraintsAndSubstitutions = useCallback(async () => {
+    // This function fetches the entire constraints object, which includes substitutions.
+    const key = 'constraints';
+    if (fetchedRef.current[key]) return;
+    setLoadingStates(s => ({...s, [key]: true, substitutions: true }));
+    try {
+        const data = await api.getConstraints();
+        setConstraints(data);
+        fetchedRef.current.constraints = true;
+        fetchedRef.current.substitutions = true; // They are fetched together
+    } catch (e: any) {
+        toast.error(`Failed to load constraints: ${e.message}`);
+    } finally {
+        setLoadingStates(s => ({...s, [key]: false, substitutions: false }));
+    }
+  }, [toast]);
+  const fetchConstraints = fetchConstraintsAndSubstitutions;
+  const fetchSubstitutions = fetchConstraintsAndSubstitutions;
 
   const refreshData = useCallback(async () => {
-      // Reset fetched flags
-      Object.keys(fetchedRef.current).forEach(key => {
-          (fetchedRef.current as any)[key] = false;
-      });
-      // Re-fetch everything in parallel
+      Object.keys(fetchedRef.current).forEach(key => { (fetchedRef.current as any)[key] = false; });
       toast.info("Refreshing all data...");
-      // A full refresh should re-fetch settings too
       await Promise.all([
-          loadInitialShell(),
-          fetchUsers(),
-          fetchSubjects(),
-          fetchFaculty(),
-          fetchRooms(),
-          fetchBatches(),
-          fetchDepartments(),
-          fetchTimetables(),
-          fetchConstraints(),
+          loadInitialShell(), fetchUsers(), fetchSubjects(), fetchFaculty(), fetchRooms(),
+          fetchBatches(), fetchDepartments(), fetchTimetables(), fetchConstraints(), fetchFacultyAllocations(),
       ]);
       toast.success("Data refreshed.");
-  }, [loadInitialShell, fetchUsers, fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments, fetchTimetables, fetchConstraints, toast]);
-
+  }, [loadInitialShell, fetchUsers, fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments, fetchTimetables, fetchConstraints, fetchFacultyAllocations, toast]);
 
   const login = (loggedInUser: User) => {
     setUser(loggedInUser);
-    setCurrentPage(loggedInUser.role === 'Student' || loggedInUser.role === 'Faculty' ? 'My Timetable' : 'Dashboard');
+    // Navigate to the correct default page based on role.
+    if (loggedInUser.role === 'Student' || loggedInUser.role === 'Faculty') {
+        setCurrentPage('My Timetable');
+    } else {
+        setCurrentPage('Dashboard');
+    }
   };
-
   const logout = () => {
     setUser(null);
     setCurrentPage('Homepage');
-    toast.success('Logged out successfully.');
+    // CRITICAL FIX: Reset the fetched status so the next user can load data.
+    Object.keys(fetchedRef.current).forEach(key => {
+        (fetchedRef.current as any)[key] = false;
+    });
   };
-
   const toggleSidebar = () => setIsSidebarOpen(prev => !prev);
   const toggleSidebarCollapse = () => setIsSidebarCollapsed(prev => !prev);
 
   const contextValue = useMemo(() => ({
-    user,
-    users,
-    isLoading,
-    loadingStates,
-    currentPage,
-    subjects,
-    faculty,
-    rooms,
-    batches,
-    departments,
-    generatedTimetables,
-    constraints,
-    globalConstraints,
-    timetableSettings,
-    timeSlots,
-    appInitializationError,
-    isSidebarOpen,
-    isSidebarCollapsed,
-    login,
-    logout,
-    setCurrentPage,
-    toggleSidebar,
-    toggleSidebarCollapse,
-    refreshData,
-    fetchUsers,
-    fetchSubjects,
-    fetchFaculty,
-    fetchRooms,
-    fetchBatches,
-    fetchDepartments,
-    fetchTimetables,
-    fetchConstraints,
-    setGlobalConstraints,
-    setTimetableSettings,
+    user, users, isLoading, loadingStates, currentPage, subjects, faculty, rooms, batches, departments,
+    generatedTimetables, constraints, facultyAllocations, globalConstraints, timetableSettings, timeSlots, 
+    appInitializationError, isSidebarOpen, isSidebarCollapsed, login, logout, setCurrentPage,
+    toggleSidebar, toggleSidebarCollapse, refreshData, fetchUsers, fetchSubjects, fetchFaculty,
+    fetchRooms, fetchBatches, fetchDepartments, fetchTimetables, fetchConstraints, fetchSubstitutions,
+    fetchFacultyAllocations, setGlobalConstraints, setTimetableSettings,
   }), [
       user, users, isLoading, loadingStates, currentPage, subjects, faculty, rooms, batches, departments,
-      generatedTimetables, constraints, globalConstraints, timetableSettings, timeSlots, appInitializationError, 
+      generatedTimetables, constraints, facultyAllocations, globalConstraints, timetableSettings, timeSlots, appInitializationError, 
       isSidebarOpen, isSidebarCollapsed, refreshData, fetchUsers, fetchSubjects, fetchFaculty, fetchRooms, 
-      fetchBatches, fetchDepartments, fetchTimetables, fetchConstraints
+      fetchBatches, fetchDepartments, fetchTimetables, fetchConstraints, fetchSubstitutions, fetchFacultyAllocations
   ]);
 
   return (

@@ -14,7 +14,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ label,
   
   const getTriggerLabel = () => {
     if (selected.length === 0) {
-      return `Select ${label}...`;
+      return `Select...`;
     }
     if (selected.length === 1) {
         const selectedOption = options.find(opt => opt.value === selected[0]);
@@ -30,7 +30,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({ label,
 
   return (
     <div>
-        <label className="block text-sm font-medium text-text-muted mb-1">{label}</label>
+        {label && <label className="block text-sm font-medium text-text-muted mb-1">{label}</label>}
         <button type="button" onClick={() => setIsModalOpen(true)} className="glass-input w-full flex justify-between items-center text-left">
             <span className="truncate pr-2">{getTriggerLabel()}</span>
             <ChevronDown className="h-4 w-4 text-text-muted shrink-0"/>
