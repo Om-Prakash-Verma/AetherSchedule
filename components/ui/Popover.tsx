@@ -42,7 +42,7 @@ export const Popover: React.FC<{ children: React.ReactNode }> = ({ children }) =
   
   return (
     <PopoverContext.Provider value={{ open, setOpen, triggerRef, contentRef }}>
-      <div className="relative inline-block w-full h-full">{children}</div>
+      <div className="relative inline-block w-full">{children}</div>
     </PopoverContext.Provider>
   );
 };
@@ -67,16 +67,43 @@ export const PopoverTrigger: React.FC<{ children: React.ReactElement; asChild?: 
   );
 };
 
-export const PopoverContent: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { open, contentRef } = usePopover();
+export const PopoverContent: React.FC<{ 
+    children: React.ReactNode;
+    align?: 'center' | 'start';
+    className?: string;
+}> = ({ children, align = 'center', className = '' }) => {
+  const { open, contentRef, triggerRef } = usePopover();
+  const [style, setStyle] = useState<React.CSSProperties>({});
+
+  useEffect(() => {
+      if (open && triggerRef.current) {
+          if (align === 'start') {
+              setStyle({
+                  top: '100%',
+                  left: 0,
+                  width: `${triggerRef.current.offsetWidth}px`,
+              });
+          } else { // center
+               setStyle({
+                  top: '100%',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+              });
+          }
+      }
+  }, [open, triggerRef, align]);
+
 
   if (!open) return null;
+
+  const baseClassName = "absolute z-50 mt-2 border border-[var(--border)] bg-panel-strong backdrop-blur-md rounded-lg shadow-2xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95";
+  const centerWidthClass = align === 'center' ? 'w-72' : '';
 
   return (
     <div
       ref={contentRef}
-      className="absolute z-50 w-72 mt-2 border border-[var(--border)] bg-panel-strong backdrop-blur-md rounded-lg shadow-2xl animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95"
-      style={{ top: '100%', left: '50%', transform: 'translateX(-50%)' }}
+      className={`${baseClassName} ${centerWidthClass} ${className}`}
+      style={style}
     >
       {children}
     </div>

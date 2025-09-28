@@ -1,6 +1,99 @@
-import type { User, Subject, Faculty, Room, Batch, Department, GeneratedTimetable, Constraints, GlobalConstraints } from '../types';
 
-// --- BASE USERS ---
+import type { User, Subject, Faculty, Room, Batch, Department, GeneratedTimetable, Constraints, GlobalConstraints, TimetableSettings } from '../types';
+
+// --- HELPER ---
+const createId = (name: string, prefix: string) => {
+    return `${prefix}_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`;
+};
+
+// --- USER PROVIDED DATA ---
+const newSubjectsData = [
+    { name: 'Digital Electronics', code: 'BOE310', type: 'Theory' as const, hours: 4, teachers: ['Dr. Somya Srivastava', 'Dr. Vipin Sharma', 'Dr. Neha Gupta', 'Mr. Varun Kumar', 'Ms. Swati'] },
+    { name: 'Data Structures', code: 'BCS301', type: 'Theory' as const, hours: 4, teachers: ['Ms. Pooja Singhal', 'Ms. Ashtha Goyal', 'Mr. Gaurav Vats', 'Ms. Shruti Agarwal', 'Mr. Dhaneshwar Kumar', 'Mr. Vivek Kumar', 'Mr. Praveen Kumar Rai', 'Mr. Chandrahas Mishra'] },
+    { name: 'Computer Organization & Architecture', code: 'BCS302', type: 'Theory' as const, hours: 4, teachers: ['Ms. Swati', 'Ms. Divya Maheshwari', 'Ms. Laxmi Saraswat', 'Mr. Varun Kumar', 'Mr. Vaibhav Ranjan', 'Ms. Neetu Bansla'] },
+    { name: 'Digital System & Logic (DSTL)', code: 'BCS303', type: 'Theory' as const, hours: 4, teachers: ['Ms. Sonia Lamba', 'Ms. Neha Gaur', 'Ms. Abhilasha Varshney', 'Ms. Neplai Singla'] },
+    { name: 'Python Programming', code: 'BCC302', type: 'Theory' as const, hours: 3, teachers: ['Ms. Disha Mohini Pathak', 'Ms. Abhilasha Varshney', 'Ms. Vandana Sharma', 'Ms. Nidhi Yadav', 'Prof. (Dr.) Pankaj Kumar Sharma'] },
+    { name: 'Universal Human Values (UHV)', code: 'BVE301', type: 'Theory' as const, hours: 3, teachers: ['Dr. Sunita Goyal', 'Ms. Vineeta Pal', 'Dr. Anupriya'] },
+    { name: 'Soft Skills', code: 'GEN101', type: 'Workshop' as const, hours: 2, teachers: ['Dr. Abrity Thakur', 'Ms. Megha Bajaj', 'Ms. Pooja Ruhtagi'] },
+    { name: 'DS Lab', code: 'BCS351', type: 'Practical' as const, hours: 2, teachers: ['Ms. Pooja Singhal', 'Mr. Chandrahas Mishra', 'Ms. Ashtha Goyal', 'Mr. Gaurav Vats', 'Ms. Shruti Agarwal', 'Mr. Dhaneshwar Kumar', 'Mr. Sangh Priya', 'Mr. Vivek Kumar', 'Mr. Praveen Kumar Rai', 'Mr. Abhishek Yadav'] },
+    { name: 'COA Lab', code: 'BCS352', type: 'Practical' as const, hours: 2, teachers: ['Ms. Swati', 'Ms. Nidhi Yadav', 'Ms. Divya Maheshwari', 'Ms. Laxmi Saraswat', 'Mr. Varun Kumar', 'Mr. Vaibhav Ranjan', 'Ms. Neetu Bansla'] },
+    { name: 'Web Development Lab', code: 'BCS353', type: 'Practical' as const, hours: 2, teachers: ['Ms. Saumya Gupta', 'Ms. Neplai Singla', 'Ms. Anshika', 'Mr. Dhaneshwar Kumar', 'Mr. Satvik', 'Mr. Ravi Sikka', 'Ms. Laxmi Saraswat', 'Ms. Sonia Lamba', 'Ms. Nancy'] },
+    { name: 'DSA Training', code: 'TRN001', type: 'Workshop' as const, hours: 2, teachers: ['Ms. Pooja Singhal', 'Mr. Chandrahas Mishra', 'Ms. Ashtha Goyal', 'Mr. Gaurav Vats', 'Ms. Shruti Agarwal', 'Mr. Dhaneshwar Kumar', 'Mr. Sangh Priya', 'Mr. Vivek Kumar', 'Mr. Abhishek Yadav', 'Ms. Vandana Sharma', 'Ms. Saumya Gupta'] },
+    { name: 'FSD Training', code: 'TRN002', type: 'Workshop' as const, hours: 2, teachers: ['Ms. Saumya Gupta', 'Ms. Laxmi Saraswat', 'Mr. Dhaneshwar Kumar', 'Mr. Ravi Sikka', 'Mr. Yashi Rastogi', 'Ms. Anshika', 'Ms. Beena', 'Ms. Nancy', 'Mr. Satvik', 'Mr. Vicky'] }
+];
+
+// --- GENERATION LOGIC ---
+
+// 1. Process Faculty from user data
+const allTeacherNames = [...new Set(newSubjectsData.flatMap(s => s.teachers))];
+const faculty: Faculty[] = allTeacherNames.map(name => ({
+    id: createId(name, 'fac'),
+    name,
+    subjectIds: [],
+    userId: createId(name, 'user_fac')
+}));
+
+// 2. Process Subjects from user data and link to Faculty
+const subjects: Subject[] = newSubjectsData.map(sub => {
+    const subjectId = createId(sub.code, 'sub');
+    sub.teachers.forEach(teacherName => {
+        const facultyMember = faculty.find(f => f.name === teacherName);
+        if (facultyMember) {
+            facultyMember.subjectIds.push(subjectId);
+        }
+    });
+    return {
+        id: subjectId,
+        name: sub.name,
+        code: sub.code,
+        type: sub.type,
+        credits: Math.max(1, Math.floor(sub.hours / 1.5)),
+        hoursPerWeek: sub.hours
+    };
+});
+
+// 3. Departments
+const departments: Department[] = [
+  { id: 'dept_cs', name: 'Computer Science & Engineering', code: 'CS' },
+  { id: 'dept_ee', name: 'Electrical Engineering', code: 'EE' },
+  { id: 'dept_me', name: 'Mechanical Engineering', code: 'ME' },
+  { id: 'dept_ce', name: 'Civil Engineering', code: 'CE' },
+  { id: 'dept_gen', name: 'General & Humanities', code: 'GEN' },
+];
+
+// 4. Rooms (RESTORED)
+const rooms: Room[] = [
+    { id: 'room_lh1', name: 'Lecture Hall 1', capacity: 120, type: 'Lecture Hall' },
+    { id: 'room_lh2', name: 'Lecture Hall 2', capacity: 120, type: 'Lecture Hall' },
+    { id: 'room_lh3', name: 'Lecture Hall 3', capacity: 70, type: 'Lecture Hall' },
+    { id: 'room_lab_cs1', name: 'CS Lab 1 (DS)', capacity: 60, type: 'Lab' },
+    { id: 'room_lab_cs2', name: 'CS Lab 2 (COA)', capacity: 60, type: 'Lab' },
+    { id: 'room_lab_cs3', name: 'CS Lab 3 (Web)', capacity: 60, type: 'Lab' },
+    { id: 'room_workshop1', name: 'Workshop Hall 1', capacity: 80, type: 'Workshop' },
+];
+
+// 5. Batches (RESTORED)
+const batches: Batch[] = [
+    {
+        id: 'batch_cs_s3_a',
+        name: 'CS S3 A',
+        departmentId: 'dept_cs',
+        semester: 3,
+        studentCount: 65,
+        subjectIds: subjects.map(s => s.id) // Assign all subjects for demo purposes
+    },
+    {
+        id: 'batch_cs_s3_b',
+        name: 'CS S3 B',
+        departmentId: 'dept_cs',
+        semester: 3,
+        studentCount: 65,
+        subjectIds: subjects.map(s => s.id)
+    },
+];
+
+
+// 6. Users
 const baseUsers: User[] = [
   { id: 'user_super_admin', name: 'Super Admin', email: 'super.admin@test.com', role: 'SuperAdmin' },
   { id: 'user_timetable_manager', name: 'Timetable Manager', email: 'manager@test.com', role: 'TimetableManager' },
@@ -10,142 +103,35 @@ const baseUsers: User[] = [
   { id: 'user_ce_hod', name: 'CE Department Head', email: 'ce.hod@test.com', role: 'DepartmentHead' },
 ];
 
-// --- DEPARTMENTS ---
-const departments: Department[] = [
-  { id: 'dept_cs', name: 'Computer Science & Engineering', code: 'CS' },
-  { id: 'dept_ee', name: 'Electrical Engineering', code: 'EE' },
-  { id: 'dept_me', name: 'Mechanical Engineering', code: 'ME' },
-  { id: 'dept_ce', name: 'Civil Engineering', code: 'CE' },
-];
+const facultyUsers: User[] = faculty.map(f => ({
+    id: f.userId!,
+    name: f.name,
+    email: `${f.id.replace('fac_', '')}@test.com`,
+    role: 'Faculty',
+    facultyId: f.id,
+}));
 
-// --- GENERATE SUBJECTS (20) ---
-const subjects: Subject[] = [];
-const subjectTypes: Subject['type'][] = ['Theory', 'Practical', 'Workshop'];
-let subjectCounter = 1;
-for (const dept of departments) {
-    for (let i = 1; i <= 5; i++) { // 5 subjects per department
-        const type = subjectTypes[i % 3];
-        const hours = type === 'Theory' ? 5 : (type === 'Practical' ? 4 : 3);
-        subjects.push({
-            id: `sub_${dept.code.toLowerCase()}_${subjectCounter}`,
-            name: `${dept.name} Subject ${i}`,
-            code: `${dept.code}${100 + subjectCounter}`,
-            type: type,
-            credits: Math.floor(hours / 1.5),
-            hoursPerWeek: hours,
-        });
-        subjectCounter++;
-    }
-}
-// Add one generic subject for pinned events
-subjects.push({ id: 'sub_gen001', name: 'Guest Lecture', code: 'GEN001', type: 'Workshop', credits: 0, hoursPerWeek: 2 });
-
-
-// --- GENERATE ROOMS (20) ---
-const rooms: Room[] = [];
-const roomTypes: Room['type'][] = ['Lecture Hall', 'Lab', 'Workshop'];
-for (let i = 1; i <= 20; i++) {
-    const type = roomTypes[i % 3];
-    const capacity = 500;
-    rooms.push({
-        id: `room_${i}`,
-        name: `${type.split(' ')[0]}-${i}`,
-        capacity: capacity,
-        type: type,
-    });
-}
-rooms.push({ id: 'room_seminar', name: 'Main Seminar Hall', capacity: 500, type: 'Lecture Hall' });
-
-
-// --- GENERATE BATCHES (20) ---
-const batches: Batch[] = [];
-let batchCounter = 1;
-for (const dept of departments) {
-    for (const sem of [1, 3, 5]) {
-        for (const section of ['A', 'B']) {
-            if (batches.length >= 20) break;
-            const batchSubjects = subjects
-                .filter(s => s.code.startsWith(dept.code))
-                .sort(() => 0.5 - Math.random())
-                .slice(0, 5); // Each batch takes 5 subjects from its department
-
-            batches.push({
-                id: `batch_${dept.code.toLowerCase()}_s${sem}_${section.toLowerCase()}_${batchCounter}`,
-                name: `${dept.code} S${sem} ${section}`,
-                departmentId: dept.id,
-                semester: sem,
-                studentCount: 60 + (batchCounter % 10),
-                subjectIds: batchSubjects.map(s => s.id),
-            });
-            batchCounter++;
-        }
-        if (batches.length >= 20) break;
-    }
-    if (batches.length >= 20) break;
-}
-
-// --- GENERATE FACULTY (100) & USERS ---
-const faculty: Faculty[] = [];
-const facultyUsers: User[] = [];
-const subjectTaughtCount = new Map(subjects.map(s => [s.id, 0]));
-
-for (let i = 1; i <= 100; i++) {
-    const facultyId = `fac_${i}`;
-    const userId = `user_fac_${i}`;
-    const facultyName = `Professor ${i}`;
-    const assignedSubjectIds: string[] = [];
-
-    // Ensure every subject is taught by at least 3 faculty members
-    let subjectToAssign: string | null = null;
-    for (const [subjectId, count] of subjectTaughtCount.entries()) {
-        if (count < 3 && subjectId !== 'sub_gen001') {
-            subjectToAssign = subjectId;
-            break;
-        }
-    }
-    
-    if (subjectToAssign) {
-        assignedSubjectIds.push(subjectToAssign);
-        subjectTaughtCount.set(subjectToAssign, subjectTaughtCount.get(subjectToAssign)! + 1);
-    } else {
-        // If all subjects are covered, assign a random one
-        const randomSubject = subjects[Math.floor(Math.random() * (subjects.length -1))]; // Exclude GEN001
-        assignedSubjectIds.push(randomSubject.id);
-    }
-
-    // Assign a second subject for variety
-    if (Math.random() > 0.4) {
-        const randomSubject2 = subjects[Math.floor(Math.random() * (subjects.length -1))];
-        if (!assignedSubjectIds.includes(randomSubject2.id)) {
-            assignedSubjectIds.push(randomSubject2.id);
-        }
-    }
-
-    faculty.push({ id: facultyId, name: facultyName, subjectIds: assignedSubjectIds, userId: userId });
-    facultyUsers.push({ id: userId, name: facultyName, email: `prof.${i}@test.com`, role: 'Faculty', facultyId: facultyId });
-}
-
-// Add special faculty for guest lecture
-faculty.push({ id: 'fac_guest', name: 'Guest Lecturer', subjectIds: ['sub_gen001'], userId: null });
-
-const users: User[] = [...baseUsers, ...facultyUsers];
-
-// --- GENERATE STUDENT USERS ---
-batches.forEach(batch => {
-  const userEmail = `${batch.name.toLowerCase().replace(/\s+/g, '_')}@test.com`;
-  users.push({
-    id: `user_batch_${batch.id}`,
+// Student users (RESTORED)
+const studentUsers: User[] = batches.map(batch => ({
+    id: `user_student_${batch.id}`,
     name: `${batch.name} Student Rep`,
-    email: userEmail,
+    email: `${batch.name.toLowerCase().replace(/\s+/g, '_')}@test.com`,
     role: 'Student',
     batchId: batch.id,
-  });
-});
+}));
 
-// --- EMPTY TIMETABLES ---
+const users: User[] = [...baseUsers, ...facultyUsers, ...studentUsers];
+
+// --- FINAL EXPORT STRUCTURE ---
+
 const generatedTimetables: GeneratedTimetable[] = [];
 
-// --- GLOBAL CONSTRAINTS ---
+const constraints: Constraints = {
+    pinnedAssignments: [],
+    plannedLeaves: [],
+    facultyAvailability: [],
+};
+
 const globalConstraints: GlobalConstraints = {
     id: 1,
     studentGapWeight: 5,
@@ -158,51 +144,13 @@ const globalConstraints: GlobalConstraints = {
     aiFacultyPreferenceWeight: 2,
 };
 
-// --- EXAMPLE CONSTRAINTS USING NEW DATA ---
-const constraints: Constraints = {
-    pinnedAssignments: [
-      {
-        id: 'pin_guest_lecture_1',
-        name: 'Mandatory Guest Lecture',
-        subjectId: 'sub_gen001',
-        facultyId: 'fac_guest',
-        roomId: 'room_seminar',
-        batchId: batches[0]?.id || '', // Pin to the first batch
-        day: 4, // Friday
-        startSlot: 4, // 13:00 - 14:00
-        duration: 2,
-      }
-    ],
-    plannedLeaves: [
-      {
-        id: 'leave_prof5_conf',
-        facultyId: 'fac_5', // Professor 5
-        startDate: '2024-10-14',
-        endDate: '2024-10-18',
-        reason: 'Attending Conference'
-      }
-    ],
-    facultyAvailability: [
-        {
-            facultyId: 'fac_1', // Professor 1
-            availability: {
-                0: [3, 4, 5, 6, 7], // Not available Mon morning
-                1: [0, 1, 2, 3, 4, 5, 6, 7],
-                2: [0, 1, 2, 3, 4, 5, 6, 7],
-                3: [0, 1, 2, 3, 4, 5, 6, 7],
-                4: [0, 1, 2, 3, 4, 5, 6, 7],
-                5: [0, 1, 2, 3], // Saturday half day
-            }
-        },
-        {
-            facultyId: 'fac_2', // Professor 2
-            availability: { // Prefers not to work on Fridays
-                0: [0, 1, 2, 3, 4, 5, 6, 7],
-                1: [0, 1, 2, 3, 4, 5, 6, 7],
-                2: [0, 1, 2, 3, 4, 5, 6, 7],
-                3: [0, 1, 2, 3, 4, 5, 6, 7],
-            }
-        }
+const timetableSettings: TimetableSettings = {
+    id: 1,
+    collegeStartTime: '09:00',
+    collegeEndTime: '17:00',
+    periodDuration: 60,
+    breaks: [
+        { name: 'Lunch Break', startTime: '13:00', endTime: '14:00' }
     ],
 };
 
@@ -215,5 +163,6 @@ export const initialData = {
     batches,
     generatedTimetables,
     globalConstraints,
+    timetableSettings,
     constraints,
 };

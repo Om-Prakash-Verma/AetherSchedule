@@ -103,17 +103,8 @@ POSTGRES_URL="postgres://user:password@host/dbname"
 API_KEY="your_gemini_api_key_here"
 ```
 
-### 4. Push Database Schema
-This command will read your Drizzle schema (`/db/schema.ts`) and create the necessary tables in your Neon database.
-
-```bash
-npx drizzle-kit push
-```
-*Note: The command was changed to `npx drizzle-kit push` which is the recommended way to run it with a local dependency.*
-
-
-### 5. Run the Development Server
-This single command concurrently starts the Hono API backend and the Vite frontend development server.
+### 4. Run the Development Server
+This single command handles everything. It will first **synchronize your database schema** and then concurrently start the Hono API backend and the Vite frontend development server.
 
 ```bash
 npm run dev
@@ -122,9 +113,15 @@ npm run dev
 - The Hono API will be running on `http://localhost:8787`
 - The Vite frontend will open on `http://localhost:5173` (or another port if 5173 is busy).
 
-The application should now be running locally! The first time you access the app, it will automatically seed the database with initial data.
+The application should now be running locally! The first time you access the app, it will automatically seed the database with initial demo data.
 
 ---
+**Note on Manual Database Pushing:** The `npm run dev` script now handles pushing the schema automatically. If you ever need to do it manually (e.g., after changing the schema while the dev server is running), you can use the following command in a separate terminal:
+```bash
+npm run db:push
+```
+---
+
 
 ## 📂 Project Structure
 

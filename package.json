@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail \"npm:dev:api\" \"npm:dev:vite\"",
+    "dev": "npm run db:push && concurrently --kill-others-on-fail \"npm:dev:api\" \"npm:dev:vite\"",
     "dev:vite": "wait-on tcp:8787 && vite",
     "dev:api": "tsx watch api/dev-server.ts",
     "build": "vite build",

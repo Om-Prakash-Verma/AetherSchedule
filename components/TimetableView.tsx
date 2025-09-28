@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { GlassPanel } from './GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
-import { DAYS_OF_WEEK, TIME_SLOTS } from '../constants';
+import { DAYS_OF_WEEK } from '../constants';
 import type { GeneratedTimetable, ClassAssignment, Conflict, DropChange, SingleBatchTimetableGrid } from '../types';
 import { GripVertical, AlertTriangle } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/Popover';
@@ -15,18 +15,18 @@ interface TimetableViewProps {
 }
 
 const BATCH_COLORS = [
-  'border-blue-500/50 bg-blue-500/10',
-  'border-green-500/50 bg-green-500/10',
-  'border-purple-500/50 bg-purple-500/10',
-  'border-orange-500/50 bg-orange-500/10',
-  'border-pink-500/50 bg-pink-500/10',
-  'border-teal-500/50 bg-teal-500/10',
-  'border-yellow-500/50 bg-yellow-500/10',
-  'border-indigo-500/50 bg-indigo-500/10',
+  'border-blue-500/50 bg-blue-900/30',
+  'border-green-500/50 bg-green-900/30',
+  'border-purple-500/50 bg-purple-900/30',
+  'border-orange-500/50 bg-orange-900/30',
+  'border-pink-500/50 bg-pink-900/30',
+  'border-teal-500/50 bg-teal-900/30',
+  'border-yellow-500/50 bg-yellow-900/30',
+  'border-indigo-500/50 bg-indigo-900/30',
 ];
 
 export const TimetableView: React.FC<TimetableViewProps> = ({ timetableData, isEditable = false, onDropAssignment, conflictMap }) => {
-  const { subjects, faculty, rooms, batches } = useAppContext();
+  const { subjects, faculty, rooms, batches, timeSlots } = useAppContext();
   
   const [draggingItem, setDraggingItem] = useState<ClassAssignment | null>(null);
 
@@ -97,7 +97,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ timetableData, isE
         ))}
 
         {/* Body */}
-        {TIME_SLOTS.map((slot, slotIndex) => (
+        {timeSlots.map((slot, slotIndex) => (
           <React.Fragment key={slot}>
             <div className="text-right text-text-muted p-2 text-xs sticky left-0 z-10 bg-panel/80 backdrop-blur-sm flex items-center justify-end font-mono">
               <span>{slot}</span>
@@ -110,7 +110,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({ timetableData, isE
               return (
                 <div 
                   key={`${dayIndex}-${slotIndex}`} 
-                  className="h-28 bg-panel/5 border border-transparent hover:border-accent/20 transition-colors"
+                  className="h-28 bg-panel-strong border border-transparent hover:border-accent/20 transition-colors"
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, dayIndex, slotIndex)}
                 >

@@ -6,22 +6,16 @@ import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
 
-interface LoginPageProps {
-  onBackToHome: () => void;
-}
-
 const quickLoginUsers = [
   { label: 'Super Admin', email: 'super.admin@test.com' },
   { label: 'Manager', email: 'manager@test.com' },
   { label: 'HOD (CS)', email: 'cs.hod@test.com' },
   { label: 'HOD (EE)', email: 'ee.hod@test.com' },
-  { label: 'Faculty (Prof 1)', email: 'prof.1@test.com' },
-  { label: 'Faculty (Prof 2)', email: 'prof.2@test.com' },
-  { label: 'Student (CS S1 A)', email: 'cs_s1_a@test.com' },
-  { label: 'Student (ME S5 B)', email: 'me_s5_b@test.com' },
+  { label: 'Faculty (P. Singhal)', email: 'ms_pooja_singhal@test.com' },
+  { label: 'Faculty (Swati)', email: 'ms_swati@test.com' },
 ];
 
-const LoginPage: React.FC<LoginPageProps> = ({ onBackToHome }) => {
+const LoginPage: React.FC<{ onBackToHome: () => void; }> = ({ onBackToHome }) => {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAppContext();
@@ -111,7 +105,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onBackToHome }) => {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {quickLoginUsers.map(user => (
                     <GlassButton
                         key={user.email}

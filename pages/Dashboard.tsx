@@ -1,10 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { Users, Book, Building, School } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
-    const { user, subjects, faculty, rooms, batches } = useAppContext();
+    const { 
+        user, subjects, faculty, rooms, batches,
+        fetchSubjects, fetchFaculty, fetchRooms, fetchBatches
+    } = useAppContext();
+
+    useEffect(() => {
+        // Fetch all data needed for the stat cards
+        fetchSubjects();
+        fetchFaculty();
+        fetchRooms();
+        fetchBatches();
+    }, [fetchSubjects, fetchFaculty, fetchRooms, fetchBatches]);
 
     const stats = [
         { label: 'Total Subjects', value: subjects.length, icon: Book },

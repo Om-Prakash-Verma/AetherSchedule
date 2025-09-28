@@ -3,19 +3,23 @@ import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
-import { Save, RefreshCw, PlusCircle, Cpu } from 'lucide-react';
+import { Save, RefreshCw, PlusCircle, Cpu, Trash2 } from 'lucide-react';
 import * as api from '../services';
-import type { GlobalConstraints, User } from '../types';
+import type { GlobalConstraints, User, TimetableSettings } from '../types';
 import { Slider } from '../components/ui/Slider';
 import { DataTable } from '../components/DataTable';
 import { DataFormModal } from '../components/DataFormModal';
 
-type SettingsTab = 'constraints' | 'users' | 'system';
+type SettingsTab = 'constraints' | 'structure' | 'users' | 'system';
 
 const Settings: React.FC = () => {
-    const { globalConstraints, setGlobalConstraints, refreshData, users } = useAppContext();
+    const { 
+        globalConstraints, setGlobalConstraints, timetableSettings, setTimetableSettings, 
+        refreshData, users, fetchUsers, loadingStates 
+    } = useAppContext();
     const [activeTab, setActiveTab] = useState<SettingsTab>('constraints');
     const [localConstraints, setLocalConstraints] = useState<GlobalConstraints | null>(globalConstraints);
+    const [localTimetableSettings, setLocalTimetableSettings] = useState<TimetableSettings | null>(timetableSettings);
     const [isSaving, setIsSaving] = useState(false);
     const [isResetting, setIsResetting] = useState(false);
     const [isUserModalOpen, setIsUserModalOpen] = useState(false);
@@ -25,7 +29,17 @@ const Settings: React.FC = () => {
     useEffect(() => {
         setLocalConstraints(globalConstraints);
     }, [globalConstraints]);
+
+    useEffect(() => {
+        setLocalTimetableSettings(timetableSettings);
+    }, [timetableSettings]);
     
+    useEffect(() => {
+        if (activeTab === 'users') {
+            fetchUsers();
+        }
+    }, [activeTab, fetchUsers]);
+
     const handleSaveUser = useCallback(async (user: User) => {
         try {
             await api.saveUser(user);
@@ -66,6 +80,54 @@ const Settings: React.FC = () => {
             setIsSaving(false);
         }
     };
+    
+    const handleSaveTimetableSettings = async () => {
+        if (!localTimetableSettings) return;
+
+        // FIX: Add robust client-side validation before saving.
+        if (!localTimetableSettings.periodDuration || Number(localTimetableSettings.periodDuration) <= 0) {
+            toast.error("Period Duration must be a positive number.");
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const saved = await api.saveTimetableSettings(localTimetableSettings);
+            setTimetableSettings(saved); // This updates the context
+            toast.success('Timetable structure updated successfully!');
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to update settings.');
+        } finally {
+            setIsSaving(false);
+        }
+    }
+    
+    const handleTimetableSettingChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value, type } = e.target;
+        // FIX: Adopted a safer pattern for number inputs to avoid NaN in state.
+        const finalValue = type === 'number' ? (value === '' ? '' : Number(value)) : value;
+        setLocalTimetableSettings(prev => prev ? { ...prev, [name]: finalValue } : null);
+    };
+
+    const handleBreakChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+        const { name, value } = e.target;
+        const newBreaks = [...(localTimetableSettings?.breaks || [])];
+        newBreaks[index] = { ...newBreaks[index], [name]: value };
+        setLocalTimetableSettings(prev => prev ? { ...prev, breaks: newBreaks } : null);
+    };
+
+    const addBreak = () => {
+        const newBreak = { name: 'New Break', startTime: '12:00', endTime: '13:00' };
+        const newBreaks = [...(localTimetableSettings?.breaks || []), newBreak];
+        setLocalTimetableSettings(prev => prev ? { ...prev, breaks: newBreaks } : null);
+    };
+
+    const removeBreak = (index: number) => {
+        const newBreaks = [...(localTimetableSettings?.breaks || [])];
+        newBreaks.splice(index, 1);
+        setLocalTimetableSettings(prev => prev ? { ...prev, breaks: newBreaks } : null);
+    };
+
 
     const handleResetData = async () => {
         if (!window.confirm("Are you sure you want to reset all application data? This will restore the initial seed data and cannot be undone.")) return;
@@ -99,6 +161,10 @@ const Settings: React.FC = () => {
             ];
             return (
                  <div className="space-y-8">
+                    <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Base Weights</h3>
+                        <p className="text-sm text-text-muted mb-6">Set the foundational importance of each soft constraint. The AI will use these as a baseline and may tune them further based on faculty feedback.</p>
+                    </div>
                     {constraintFields.map(({key, aiKey, label, description}) => (
                          <div key={key}>
                             <div className="flex justify-between items-center">
@@ -133,13 +199,76 @@ const Settings: React.FC = () => {
                 </div>
             )
         }
+        if (activeTab === 'structure') {
+            if (!localTimetableSettings) return <p className="text-text-muted text-center py-8">Loading settings...</p>;
+            return (
+                <div className="space-y-6">
+                     <div>
+                        <h3 className="text-lg font-bold text-white mb-2">Academic Hours</h3>
+                        <p className="text-sm text-text-muted mb-4">Define the core timing for the entire institution.</p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-1">College Start Time</label>
+                                <input type="time" name="collegeStartTime" value={localTimetableSettings.collegeStartTime} onChange={handleTimetableSettingChange} className="glass-input"/>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-text-muted mb-1">College End Time</label>
+                                <input type="time" name="collegeEndTime" value={localTimetableSettings.collegeEndTime} onChange={handleTimetableSettingChange} className="glass-input"/>
+                            </div>
+                             <div>
+                                <label className="block text-sm font-medium text-text-muted mb-1">Period Duration (minutes)</label>
+                                {/* FIX: Bind value to `... || ''` to prevent React uncontrolled component warnings. */}
+                                <input type="number" name="periodDuration" value={localTimetableSettings.periodDuration || ''} onChange={handleTimetableSettingChange} className="glass-input"/>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="pt-6 border-t border-[var(--border)]">
+                        <div className="flex justify-between items-center mb-4">
+                             <div>
+                                <h3 className="text-lg font-bold text-white">Breaks</h3>
+                                <p className="text-sm text-text-muted">Define periods when no classes should be scheduled.</p>
+                            </div>
+                            <GlassButton icon={PlusCircle} onClick={addBreak} variant="secondary">Add Break</GlassButton>
+                        </div>
+                        <div className="space-y-2">
+                            {/* FIX: Guard against `breaks` being null/undefined to prevent crashes. */}
+                            {(localTimetableSettings.breaks || []).map((breakItem, index) => (
+                                <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 items-center bg-panel-strong p-2 rounded-lg">
+                                    <input type="text" name="name" value={breakItem.name} onChange={(e) => handleBreakChange(index, e)} placeholder="Break Name" className="glass-input md:col-span-2"/>
+                                    <input type="time" name="startTime" value={breakItem.startTime} onChange={(e) => handleBreakChange(index, e)} className="glass-input"/>
+                                    <div className="flex items-center gap-2">
+                                        <input type="time" name="endTime" value={breakItem.endTime} onChange={(e) => handleBreakChange(index, e)} className="glass-input"/>
+                                        <GlassButton onClick={() => removeBreak(index)} variant="secondary" className="p-2 aspect-square hover:bg-red-500/20 hover:text-red-400">
+                                            <Trash2 size={16}/>
+                                        </GlassButton>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    
+                    <div className="mt-8 pt-6 border-t border-[var(--border)] flex justify-end">
+                        <GlassButton icon={Save} onClick={handleSaveTimetableSettings} disabled={isSaving}>
+                            {isSaving ? 'Saving...' : 'Save Structure'}
+                        </GlassButton>
+                    </div>
+                </div>
+            )
+        }
         if (activeTab === 'users') {
              return (
                  <div>
                     <div className="flex justify-end mb-4">
                         <GlassButton icon={PlusCircle} onClick={() => { setEditingUser(null); setIsUserModalOpen(true); }}>Add New User</GlassButton>
                     </div>
-                    <DataTable<User> columns={userColumns} data={users} onEdit={(user) => { setEditingUser(user); setIsUserModalOpen(true); }} onDelete={handleDeleteUser} />
+                    <DataTable<User> 
+                        columns={userColumns} 
+                        data={users} 
+                        onEdit={(user) => { setEditingUser(user); setIsUserModalOpen(true); }} 
+                        onDelete={handleDeleteUser}
+                        isLoading={loadingStates.users}
+                    />
                  </div>
              )
         }
@@ -170,6 +299,7 @@ const Settings: React.FC = () => {
                 <div className="border-b border-[var(--border)] mb-6">
                     <nav className="-mb-px flex space-x-6 overflow-x-auto">
                         <button onClick={() => setActiveTab('constraints')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'constraints' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-text-muted hover:text-white'}`}>Global Constraints</button>
+                        <button onClick={() => setActiveTab('structure')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'structure' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-text-muted hover:text-white'}`}>Timetable Structure</button>
                         <button onClick={() => setActiveTab('users')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'users' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-text-muted hover:text-white'}`}>User Management</button>
                         <button onClick={() => setActiveTab('system')} className={`whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors ${activeTab === 'system' ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-text-muted hover:text-white'}`}>System</button>
                     </nav>

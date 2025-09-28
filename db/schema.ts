@@ -1,6 +1,6 @@
 import { pgTable, text, integer, jsonb, varchar, serial, timestamp, pgEnum } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
-import type { Faculty, GeneratedTimetable } from '../types';
+import type { Faculty, GeneratedTimetable, TimetableSettings } from '../types';
 
 export const rolesEnum = pgEnum('roles', ['SuperAdmin', 'TimetableManager', 'DepartmentHead', 'Faculty', 'Student']);
 export const subjectTypeEnum = pgEnum('subject_type', ['Theory', 'Practical', 'Workshop']);
@@ -12,7 +12,7 @@ export const users = pgTable('users', {
     name: text('name').notNull(),
     email: text('email').notNull().unique(),
     role: rolesEnum('role').notNull(),
-    batchId: text('batch_id'),
+    batchId: text('batch_id').references(() => batches.id, { onDelete: 'set null' }),
     facultyId: text('faculty_id').references(() => faculty.id, { onDelete: 'set null' }),
 });
 
@@ -91,6 +91,15 @@ export const globalConstraints = pgTable('global_constraints', {
     aiFacultyPreferenceWeight: integer('ai_faculty_preference_weight').notNull(),
 });
 
+export const timetableSettings = pgTable('timetable_settings', {
+    id: serial('id').primaryKey(),
+    collegeStartTime: text('college_start_time').notNull().default('09:00'),
+    collegeEndTime: text('college_end_time').notNull().default('17:00'),
+    periodDuration: integer('period_duration').notNull().default(60),
+    breaks: jsonb('breaks').$type<TimetableSettings['breaks']>().default([]),
+});
+
+
 export const pinnedAssignments = pgTable('pinned_assignments', {
     id: varchar('id').primaryKey(),
     name: text('name').notNull(),
@@ -98,8 +107,8 @@ export const pinnedAssignments = pgTable('pinned_assignments', {
     facultyId: varchar('faculty_id').notNull(),
     roomId: varchar('room_id').notNull(),
     batchId: varchar('batch_id').notNull(),
-    day: integer('day').notNull(),
-    startSlot: integer('start_slot').notNull(),
+    days: jsonb('days').$type<number[]>().notNull(),
+    startSlots: jsonb('start_slots').$type<number[]>().notNull(),
     duration: integer('duration').notNull(),
 });
 

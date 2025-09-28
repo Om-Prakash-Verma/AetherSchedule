@@ -6,9 +6,9 @@ import { neon } from '@neondatabase/serverless';
 import * as schema from '../db/schema';
 import { initialData } from './seedData';
 import { runOptimization, tuneConstraintWeightsWithGemini } from '../core/schedulerEngine';
-import { DAYS_OF_WEEK, TIME_SLOTS } from '../constants';
+import { DAYS_OF_WEEK } from '../constants';
 import { eq, and, inArray, InferSelectModel } from 'drizzle-orm';
-import type { GeneratedTimetable, Batch, User, FacultyAvailability, Subject, TimetableFeedback, GlobalConstraints, Faculty } from '../types';
+import type { GeneratedTimetable, Batch, User, FacultyAvailability, Subject, TimetableFeedback, GlobalConstraints, Faculty, PinnedAssignment, PlannedLeave, Room, Department, TimetableSettings } from '../types';
 
 // Inferred types from DB schema
 type TimetableFeedbackFromDB = InferSelectModel<typeof schema.timetableFeedback>;
@@ -32,7 +32,8 @@ try {
 }
 
 
-const app = new Hono().basePath('/api');
+// FIX: Export the 'app' constant so it can be imported by other modules.
+export const app = new Hono().basePath('/api');
 
 let isSeeded = false;
 
@@ -49,22 +50,102 @@ app.use('*', async (c, next) => {
             // This is the first actual query. If this fails, the credentials or connection are bad.
             const userCountResult = await db.select({ id: schema.users.id }).from(schema.users).limit(1);
             
+            // We check users, but even if this is misleading (e.g. users table is empty but others aren't),
+            // the idempotent inserts below will prevent crashes.
             if (userCountResult.length === 0) {
-                console.log('Database is empty. Seeding...');
-                await db.insert(schema.users).values(initialData.users);
-                await db.insert(schema.departments).values(initialData.departments);
-                await db.insert(schema.subjects).values(initialData.subjects);
-                await db.insert(schema.faculty).values(initialData.faculty);
-                await db.insert(schema.rooms).values(initialData.rooms);
-                await db.insert(schema.batches).values(initialData.batches);
-                await db.insert(schema.globalConstraints).values(initialData.globalConstraints);
-                console.log('Database seeded successfully!');
+                console.log('Database may be unseeded or partially seeded. Attempting idempotent seeding...');
+
+                // Make all inserts idempotent to gracefully handle partially seeded databases.
+                // .onConflictDoNothing() skips insertion if the primary key already exists.
+                
+                // 1. Independent tables
+                if (initialData.departments.length > 0) await db.insert(schema.departments).values(initialData.departments).onConflictDoNothing();
+                if (initialData.subjects.length > 0) await db.insert(schema.subjects).values(initialData.subjects).onConflictDoNothing();
+                if (initialData.rooms.length > 0) await db.insert(schema.rooms).values(initialData.rooms).onConflictDoNothing();
+                
+                // 2. Batches (depends on departments)
+                if (initialData.batches.length > 0) await db.insert(schema.batches).values(initialData.batches).onConflictDoNothing();
+
+                // 3. Break the user/faculty circular dependency
+                const facultyForInsert = initialData.faculty.map(f => ({
+                    id: f.id,
+                    name: f.name,
+                    subjectIds: f.subjectIds,
+                    preferredSlots: f.preferredSlots,
+                }));
+                if (facultyForInsert.length > 0) await db.insert(schema.faculty).values(facultyForInsert).onConflictDoNothing();
+
+                // 4. Insert users.
+                if (initialData.users.length > 0) await db.insert(schema.users).values(initialData.users).onConflictDoNothing();
+
+                // 5. Update faculty records with user IDs. This is safe to re-run.
+                const updateFacultyPromises = initialData.faculty
+                    .filter(f => f.userId)
+                    .map(f => 
+                        db.update(schema.faculty)
+                            .set({ userId: f.userId })
+                            .where(eq(schema.faculty.id, f.id))
+                    );
+                if (updateFacultyPromises.length > 0) await Promise.all(updateFacultyPromises);
+                
+                // 6. Seed constraints and settings tables
+                // Use onConflictDoUpdate for settings to ensure they match the seed file.
+                await db.insert(schema.globalConstraints).values(initialData.globalConstraints).onConflictDoUpdate({
+                    target: schema.globalConstraints.id,
+                    set: {
+                        studentGapWeight: initialData.globalConstraints.studentGapWeight,
+                        facultyGapWeight: initialData.globalConstraints.facultyGapWeight,
+                        facultyWorkloadDistributionWeight: initialData.globalConstraints.facultyWorkloadDistributionWeight,
+                        facultyPreferenceWeight: initialData.globalConstraints.facultyPreferenceWeight,
+                        aiStudentGapWeight: initialData.globalConstraints.aiStudentGapWeight,
+                        aiFacultyGapWeight: initialData.globalConstraints.aiFacultyGapWeight,
+                        aiFacultyWorkloadDistributionWeight: initialData.globalConstraints.aiFacultyWorkloadDistributionWeight,
+                        aiFacultyPreferenceWeight: initialData.globalConstraints.aiFacultyPreferenceWeight,
+                    }
+                });
+
+                await db.insert(schema.timetableSettings).values(initialData.timetableSettings).onConflictDoUpdate({
+                    target: schema.timetableSettings.id,
+                    set: initialData.timetableSettings
+                });
+                
+                if (initialData.constraints.pinnedAssignments.length > 0) {
+                    await db.insert(schema.pinnedAssignments).values(initialData.constraints.pinnedAssignments).onConflictDoNothing();
+                }
+                if (initialData.constraints.plannedLeaves.length > 0) {
+                    await db.insert(schema.plannedLeaves).values(initialData.constraints.plannedLeaves).onConflictDoNothing();
+                }
+                if (initialData.constraints.facultyAvailability.length > 0) {
+                    // facultyAvailability has a unique constraint on facultyId, so we update on conflict.
+                    for (const fa of initialData.constraints.facultyAvailability) {
+                        await db.insert(schema.facultyAvailability)
+                            .values(fa)
+                            .onConflictDoUpdate({ 
+                                target: schema.facultyAvailability.facultyId, 
+                                set: { availability: fa.availability } 
+                            });
+                    }
+                }
+
+                console.log('Database seeding process complete.');
             } else {
                 console.log('Database already seeded.');
             }
             isSeeded = true;
-        } catch (error) {
+        } catch (error: any) {
             console.error('CRITICAL: Database connection or seeding failed:', error);
+            
+            // FIX: Add specific check for "relation does not exist" error (code 42P01).
+            // This indicates the DB schema has not been pushed.
+            if (error.cause?.code === '42P01') {
+                const tableName = (error.cause.message || '').match(/relation "([^"]+)"/)?.[1] || 'a required table';
+                const detailedMessage = `Database schema is missing. The table '${tableName}' was not found. If you are running locally, please push your schema to the database by running the command: npx drizzle-kit push`;
+                return c.json({ 
+                    message: detailedMessage, 
+                    error: 'Database not initialized.' 
+                }, 503);
+            }
+
             return c.json({ message: 'Could not connect to the database. Please verify credentials and network accessibility.', error: (error as Error).message }, 503);
         }
     }
@@ -82,66 +163,47 @@ app.post('/login', zValidator('json', z.object({ email: z.string().email() })), 
   return c.json({ message: 'User not found' }, 404);
 });
 
-app.get('/data', async (c) => {
-    try {
-        const dataResults = await Promise.all([
-            db.select().from(schema.users),
-            db.select().from(schema.subjects),
-            db.select().from(schema.faculty),
-            db.select().from(schema.rooms),
-            db.select().from(schema.departments),
-            db.select().from(schema.batches),
-            db.query.timetables.findMany({ with: { feedback: true } }),
-            db.select().from(schema.globalConstraints).limit(1),
-            db.select().from(schema.pinnedAssignments),
-            db.select().from(schema.plannedLeaves),
-            db.select().from(schema.facultyAvailability),
-        ]);
+// --- GRANULAR DATA FETCHING ENDPOINTS ---
+app.get('/subjects', async c => c.json(await db.select().from(schema.subjects)));
+app.get('/faculty', async c => c.json(await db.select().from(schema.faculty)));
+app.get('/rooms', async c => c.json(await db.select().from(schema.rooms)));
+app.get('/departments', async c => c.json(await db.select().from(schema.departments)));
+app.get('/batches', async c => c.json(await db.select().from(schema.batches)));
+app.get('/users', async c => c.json(await db.select().from(schema.users)));
 
-        const users = dataResults[0];
-        const subjects = dataResults[1];
-        const faculty = dataResults[2];
-        const rooms = dataResults[3];
-        const departments = dataResults[4];
-        const batches = dataResults[5];
-        const timetablesWithFeedback = dataResults[6];
-        const globalConstraintsResult = dataResults[7];
-        const pinnedAssignments = dataResults[8];
-        const plannedLeaves = dataResults[9];
-        const facultyAvailability = dataResults[10];
-
-
-        // FIX: Convert Date objects to ISO strings for API compatibility.
-        // The database returns Date objects, but the frontend/shared types expect strings.
-        const timetables = timetablesWithFeedback.map(tt => ({
-            ...tt,
-            createdAt: tt.createdAt.toISOString(),
-            feedback: (tt.feedback || []).map((fb: TimetableFeedbackFromDB) => ({
-                ...fb,
-                createdAt: fb.createdAt.toISOString()
-            }))
-        }));
-
-        return c.json({
-            users,
-            subjects,
-            faculty,
-            rooms,
-            departments,
-            batches,
-            generatedTimetables: timetables,
-            globalConstraints: globalConstraintsResult[0] || initialData.globalConstraints,
-            constraints: {
-                pinnedAssignments,
-                plannedLeaves,
-                facultyAvailability,
-            }
-        });
-    } catch (error) {
-        console.error('Failed to fetch initial application data:', error);
-        return c.json({ message: 'Failed to fetch application data.', error: (error as Error).message }, 500);
-    }
+app.get('/timetables', async (c) => {
+    const timetablesWithFeedback = await db.query.timetables.findMany({ with: { feedback: true } });
+    const timetables = timetablesWithFeedback.map(tt => ({
+        ...tt,
+        createdAt: tt.createdAt.toISOString(),
+        feedback: (tt.feedback || []).map((fb: TimetableFeedbackFromDB) => ({
+            ...fb,
+            createdAt: fb.createdAt.toISOString()
+        }))
+    }));
+    return c.json(timetables);
 });
+
+app.get('/constraints', async (c) => {
+    const [pinnedAssignments, plannedLeaves, facultyAvailability] = await Promise.all([
+        db.select().from(schema.pinnedAssignments),
+        db.select().from(schema.plannedLeaves),
+        db.select().from(schema.facultyAvailability),
+    ]);
+    return c.json({ pinnedAssignments, plannedLeaves, facultyAvailability });
+});
+
+app.get('/settings', async (c) => {
+    const [globalConstraintsResult, timetableSettingsResult] = await Promise.all([
+        db.select().from(schema.globalConstraints).limit(1),
+        db.select().from(schema.timetableSettings).limit(1),
+    ]);
+    return c.json({
+        globalConstraints: globalConstraintsResult[0] || initialData.globalConstraints,
+        timetableSettings: timetableSettingsResult[0] || initialData.timetableSettings,
+    });
+});
+
 
 app.post('/scheduler', zValidator('json', z.object({ batchIds: z.array(z.string()).min(1) })), async (c) => {
     try {
@@ -161,7 +223,8 @@ app.post('/scheduler', zValidator('json', z.object({ batchIds: z.array(z.string(
             db.query.timetables.findMany({
                 where: eq(schema.timetables.status, 'Approved'),
                 with: { feedback: true },
-            })
+            }),
+            db.select().from(schema.timetableSettings).limit(1),
         ]);
         
         const batches = dbResults[0];
@@ -173,6 +236,7 @@ app.post('/scheduler', zValidator('json', z.object({ batchIds: z.array(z.string(
         const plannedLeaves = dbResults[6];
         const facultyAvailability = dbResults[7];
         const approvedTimetablesFromDb = dbResults[8];
+        const timetableSettings = (dbResults[9] || [])[0] || initialData.timetableSettings;
 
 
         if (batches.length !== batchIds.length) {
@@ -250,294 +314,204 @@ app.post('/scheduler', zValidator('json', z.object({ batchIds: z.array(z.string(
           approvedTimetables,
           constraints: { pinnedAssignments, plannedLeaves, facultyAvailability },
           globalConstraints: tunedConstraints, // Use the tuned constraints
-          days: DAYS_OF_WEEK, slots: TIME_SLOTS,
+          days: DAYS_OF_WEEK, 
+          timetableSettings,
           candidateCount: 5,
         });
       
+        // FIX: Fully construct the GeneratedTimetable object to match the required type.
         const results: GeneratedTimetable[] = candidates.map((candidate) => ({
           id: `tt_cand_${batchIds.join('_')}_${Date.now()}_${Math.random()}`,
-          batchIds, version: 1, status: 'Draft', comments: [],
+          batchIds,
+          version: 1,
+          status: 'Draft',
+          comments: [],
           createdAt: new Date().toISOString(),
-          metrics: candidate.metrics, timetable: candidate.timetable,
+          metrics: candidate.metrics,
+          timetable: candidate.timetable,
         }));
-      
-        console.log(`[API /scheduler] Successfully generated ${results.length} candidates.`);
+        
         return c.json(results);
     } catch (error) {
-        console.error('[API /scheduler] An unexpected error occurred:', error);
-        const errorMessage = error instanceof Error ? error.message : 'An unknown internal server error occurred.';
-        return c.json({ message: `Scheduler failed: ${errorMessage}` }, 500);
+        console.error(`[API /scheduler] Error:`, error);
+        return c.json({ message: 'An unexpected error occurred during timetable generation.', error: (error as Error).message }, 500);
     }
 });
 
-app.post('/timetables', async (c) => {
-    const timetable = await c.req.json() as GeneratedTimetable;
-    
-    if (timetable.status === 'Approved') {
-        const existingApproved = await db.select().from(schema.timetables).where(eq(schema.timetables.status, 'Approved'));
-        const toArchiveIds = existingApproved
-            .filter(tt => tt.batchIds.some(bId => timetable.batchIds.includes(bId)))
-            .map(tt => tt.id);
+// FIX: Add missing /reset-db endpoint to allow database resets from the UI.
+app.post('/reset-db', async (c) => {
+    try {
+        console.log('Resetting database with explicit child-to-parent order...');
         
-        if (toArchiveIds.length > 0) {
-            await db.update(schema.timetables)
-              .set({ status: 'Archived' })
-              .where(inArray(schema.timetables.id, toArchiveIds));
+        // FIX: Reworked the deletion logic to follow a safer, explicit order.
+        // This prevents foreign key constraint violations by deleting "child" records before "parent" records.
+
+        // 1. Delete all records from tables that have foreign key constraints pointing to other tables.
+        // This ensures no records are left pointing to data that will be deleted.
+        await db.delete(schema.timetableFeedback);
+        await db.delete(schema.users);
+        await db.delete(schema.batches);
+
+        // 2. Now delete records from tables that were being pointed to.
+        // The circular dependency between users and faculty is broken since users are gone.
+        await db.delete(schema.faculty);
+        await db.delete(schema.timetables);
+        await db.delete(schema.departments);
+        
+        // 3. Delete all constraint and settings tables.
+        await db.delete(schema.pinnedAssignments);
+        await db.delete(schema.plannedLeaves);
+        await db.delete(schema.facultyAvailability);
+        await db.delete(schema.globalConstraints);
+        await db.delete(schema.timetableSettings);
+        
+        // 4. Finally, delete the remaining base data tables.
+        await db.delete(schema.subjects);
+        await db.delete(schema.rooms);
+
+        isSeeded = false; // Flag for re-seeding on the next API request.
+
+        console.log('Database reset complete.');
+        return c.json({ success: true, message: 'Database has been reset.' });
+    } catch (error) {
+        console.error('CRITICAL: Database reset failed:', error);
+        return c.json({ message: 'Failed to reset the database.', error: (error as Error).message }, 500);
+    }
+});
+
+// FIX: Add all missing CRUD and update endpoints called by the frontend service.
+// --- TIMETABLE MANAGEMENT ---
+app.post('/timetables', async (c) => {
+    const timetable: GeneratedTimetable = await c.req.json();
+    if (timetable.status === 'Approved') {
+        const existingTimetables = await db.select().from(schema.timetables);
+        for (const tt of existingTimetables) {
+            if (tt.status === 'Approved' && tt.id !== timetable.id) {
+                const hasOverlap = tt.batchIds.some(bId => timetable.batchIds.includes(bId));
+                if (hasOverlap) {
+                    await db.update(schema.timetables).set({ status: 'Archived' }).where(eq(schema.timetables.id, tt.id));
+                }
+            }
         }
     }
-
-    // FIX: Convert incoming string date to a Date object for the database.
-    const { createdAt, feedback, ...dataForDb } = timetable;
-    const dataForDbWithDate = {
-        ...dataForDb,
-        createdAt: new Date(createdAt),
-    };
-
-    // FIX: Renamed 'results' to 'insertResults' to avoid a redeclaration error.
-    const insertResults = await db.insert(schema.timetables).values(dataForDbWithDate).onConflictDoUpdate({
-        target: schema.timetables.id,
-        set: dataForDbWithDate
-    }).returning();
-    
-    // FIX: Convert outgoing Date object back to a string for the client.
-    const savedTimetable = {
-        ...insertResults[0],
-        createdAt: insertResults[0].createdAt.toISOString(),
-    };
-    return c.json(savedTimetable);
+    const result = await db.insert(schema.timetables).values(timetable).onConflictDoUpdate({ target: schema.timetables.id, set: timetable }).returning();
+    return c.json(result[0]);
 });
 
 app.post('/timetables/feedback', async (c) => {
-    const feedbackData = await c.req.json() as Omit<TimetableFeedback, 'id' | 'createdAt'>;
-    
-    // FIX: Use a Date object for database insertion, not an ISO string.
-    const newFeedbackForDb = {
-        ...feedbackData,
-        id: `fb_${Date.now()}`,
-        createdAt: new Date(),
-    };
-    const results = await db.insert(schema.timetableFeedback).values(newFeedbackForDb).returning();
-
-    // FIX: Convert outgoing Date object back to a string for the client.
-    const savedFeedback = {
-        ...results[0],
-        createdAt: results[0].createdAt.toISOString(),
-    };
-    return c.json(savedFeedback);
+    const feedback: Omit<TimetableFeedback, 'id' | 'createdAt'> = await c.req.json();
+    const newId = `fb_${Date.now()}`;
+    const result = await db.insert(schema.timetableFeedback).values({ ...feedback, id: newId }).returning();
+    return c.json(result[0]);
 });
 
-app.post('/reset-db', async (c) => {
-    // FIX: Completely clear all tables in the correct dependency order.
-    // This ensures a true clean slate for re-seeding.
-    await db.delete(schema.timetableFeedback);
-    await db.delete(schema.facultyAvailability);
-    await db.delete(schema.plannedLeaves);
-    await db.delete(schema.pinnedAssignments);
-    await db.delete(schema.globalConstraints);
-    await db.delete(schema.timetables);
-    // FIX: Delete ALL users, not just students, to prevent unique constraint errors on re-seed.
-    await db.delete(schema.users);
-    await db.delete(schema.batches);
-    await db.delete(schema.departments);
-    await db.delete(schema.rooms);
-    await db.delete(schema.faculty);
-    await db.delete(schema.subjects);
-    
-    isSeeded = false;
-    
-    // Re-run the seeding logic from the middleware's perspective on the next API call
-    // This is safer than re-seeding directly here.
-    try {
-        console.log('Database tables cleared. Re-seeding will occur on the next API request.');
-    } catch(error) {
-         console.error('An error occurred during DB reset:', error);
-    }
-
-    return c.json({ success: true, message: 'Database reset. It will be re-seeded on the next action.' });
-});
-
-// Generic CRUD factory
-const createCrudEndpoints = (table: any) => {
-    const crudApp = new Hono();
-    crudApp.post('/', async (c) => {
-        const item = await c.req.json();
-        const results = await db.insert(table).values(item).onConflictDoUpdate({ target: table.id, set: item }).returning();
-        return c.json(results[0]);
-    });
-    crudApp.delete('/:id', async (c) => {
-        const id = c.req.param('id');
-        await db.delete(table).where(eq(table.id, id));
-        return c.json({ success: true });
-    });
-    return crudApp;
+// --- GENERIC CRUD FOR CORE DATA ---
+const tables = {
+    subjects: schema.subjects, faculty: schema.faculty, rooms: schema.rooms,
+    batches: schema.batches, departments: schema.departments, users: schema.users,
 };
-
-app.route('/subjects', createCrudEndpoints(schema.subjects));
-app.route('/rooms', createCrudEndpoints(schema.rooms));
-app.route('/departments', createCrudEndpoints(schema.departments));
-app.route('/users', createCrudEndpoints(schema.users));
-app.route('/constraints/pinned', createCrudEndpoints(schema.pinnedAssignments));
-app.route('/constraints/leaves', createCrudEndpoints(schema.plannedLeaves));
-
-
-// Custom Faculty Routes to handle user creation/deletion
-const facultyApp = new Hono();
-
-facultyApp.post('/', async (c) => {
-    const facultyRecord = await c.req.json() as Faculty;
-    const existingFaculty = facultyRecord.id ? await db.query.faculty.findFirst({ where: eq(schema.faculty.id, facultyRecord.id) }) : null;
-
-    // --- UPDATE existing faculty ---
-    if (existingFaculty) {
-        const updatedFaculty = await db.update(schema.faculty).set(facultyRecord).where(eq(schema.faculty.id, facultyRecord.id)).returning();
-        
-        // Also update the linked user's name if it has changed
-        if (existingFaculty.userId) {
-            const linkedUser = await db.query.users.findFirst({ where: eq(schema.users.id, existingFaculty.userId) });
-            if (linkedUser && linkedUser.name !== facultyRecord.name) {
-                await db.update(schema.users).set({ name: facultyRecord.name }).where(eq(schema.users.id, linkedUser.id));
-            }
-        }
-        return c.json(updatedFaculty[0]);
-    }
-    // --- CREATE new faculty ---
-    else {
-        if (!facultyRecord.name) {
-            return c.json({ message: 'Faculty name is required.' }, 400);
-        }
-
-        // Auto-generate a unique email
-        let baseEmail = facultyRecord.name.toLowerCase().replace(/\s+/g, '.').replace(/[^a-z0-9.]/g, '');
-        let finalEmail = `${baseEmail}@test.com`;
-        let counter = 1;
-        let existingUser = await db.query.users.findFirst({ where: eq(schema.users.email, finalEmail) });
-        while (existingUser) {
-            finalEmail = `${baseEmail}${counter}@test.com`;
-            counter++;
-            existingUser = await db.query.users.findFirst({ where: eq(schema.users.email, finalEmail) });
-        }
-        
-        try {
-            // Generate IDs first
-            const newFacultyId = `fac_${Date.now()}`;
-            const newUserId = `user_fac_${Date.now()}`;
-        
-            // 1. Create Faculty record first, with a null userId to break the circular dependency
-            const facultyToInsert = { ...facultyRecord, id: newFacultyId, userId: null };
-            await db.insert(schema.faculty).values(facultyToInsert);
-        
-            // 2. Create the User, correctly linking to the new faculty's ID
-            await db.insert(schema.users).values({
-                id: newUserId,
-                name: facultyRecord.name,
-                email: finalEmail,
-                role: 'Faculty',
-                facultyId: newFacultyId,
-            });
-            
-            // 3. Update the Faculty record with the new user's ID
-            const updatedFaculty = await db.update(schema.faculty)
-                .set({ userId: newUserId })
-                .where(eq(schema.faculty.id, newFacultyId))
-                .returning();
-            
-            return c.json(updatedFaculty[0], 201);
-        } catch (error) {
-            console.error("Error creating faculty without transaction:", error);
-            return c.json({ message: "Failed to create faculty due to a server error.", error: (error as Error).message }, 500);
-        }
-    }
-});
-
-facultyApp.delete('/:id', async (c) => {
-    const id = c.req.param('id');
-    const facultyToDelete = await db.query.faculty.findFirst({ where: eq(schema.faculty.id, id) });
-    
-    if (!facultyToDelete) {
-        return c.json({ message: 'Faculty not found' }, 404);
-    }
-    
-    try {
-        // First, delete the linked user account to avoid foreign key violations.
-        // The schema's `onDelete: 'set null'` would handle this, but explicit deletion is cleaner.
-        if (facultyToDelete.userId) {
-            await db.delete(schema.users).where(eq(schema.users.id, facultyToDelete.userId));
-        }
-        // Then, delete the faculty record itself
-        await db.delete(schema.faculty).where(eq(schema.faculty.id, id));
-
+for (const [path, table] of Object.entries(tables)) {
+    app.post(`/${path}`, async (c) => {
+        const item = await c.req.json();
+        const result = await db.insert(table).values(item).onConflictDoUpdate({ target: (table as any).id, set: item }).returning();
+        return c.json(result[0]);
+    });
+    app.delete(`/${path}/:id`, async (c) => {
+        const { id } = c.req.param();
+        await db.delete(table).where(eq((table as any).id, id));
         return c.json({ success: true });
-    } catch (error) {
-        console.error("Error deleting faculty without transaction:", error);
-        return c.json({ message: "Failed to delete faculty due to a server error.", error: (error as Error).message }, 500);
-    }
+    });
+}
+
+// --- CONSTRAINTS & SETTINGS ---
+app.post('/constraints/pinned', async c => {
+    const item: PinnedAssignment = await c.req.json();
+    const result = await db.insert(schema.pinnedAssignments).values(item).onConflictDoUpdate({ target: schema.pinnedAssignments.id, set: item }).returning();
+    return c.json(result[0]);
 });
-
-app.route('/faculty', facultyApp);
-
-
-const batchesApp = new Hono();
-batchesApp.post('/', async (c) => {
-    const batch = await c.req.json() as Batch;
-    const results = await db.insert(schema.batches).values(batch).onConflictDoUpdate({ target: schema.batches.id, set: batch }).returning();
-    const savedBatch = results[0];
-
-    if (savedBatch) {
-        const studentUserForBatch = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.batchId, savedBatch.id)).limit(1);
-
-        if (studentUserForBatch.length === 0) {
-            const userEmail = `${savedBatch.name.toLowerCase().replace(/\s+/g, '_')}@test.com`;
-            const newUser: User = {
-                id: `user_batch_${savedBatch.id}`,
-                name: `${savedBatch.name} Student Rep`,
-                email: userEmail,
-                role: 'Student',
-                batchId: savedBatch.id,
-            };
-            const existingUserByEmail = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.email, userEmail)).limit(1);
-            if (existingUserByEmail.length === 0) {
-                await db.insert(schema.users).values(newUser);
-            }
-        }
-    }
-    
-    return c.json(savedBatch);
-});
-batchesApp.delete('/:id', async (c) => {
-    const id = c.req.param('id');
-    await db.delete(schema.users).where(eq(schema.users.batchId, id));
-    await db.delete(schema.batches).where(eq(schema.batches.id, id));
+app.delete('/constraints/pinned/:id', async c => {
+    const { id } = c.req.param();
+    await db.delete(schema.pinnedAssignments).where(eq(schema.pinnedAssignments.id, id));
     return c.json({ success: true });
 });
-app.route('/batches', batchesApp);
 
+app.post('/constraints/leaves', async c => {
+    const item: PlannedLeave = await c.req.json();
+    const result = await db.insert(schema.plannedLeaves).values(item).onConflictDoUpdate({ target: schema.plannedLeaves.id, set: item }).returning();
+    return c.json(result[0]);
+});
+app.delete('/constraints/leaves/:id', async c => {
+    const { id } = c.req.param();
+    await db.delete(schema.plannedLeaves).where(eq(schema.plannedLeaves.id, id));
+    return c.json({ success: true });
+});
 
 app.post('/constraints/availability', async (c) => {
-    const item = await c.req.json() as FacultyAvailability;
-    const results = await db.insert(schema.facultyAvailability).values(item).onConflictDoUpdate({ target: schema.facultyAvailability.facultyId, set: { availability: item.availability } }).returning();
-    return c.json(results[0]);
+    const data: FacultyAvailability = await c.req.json();
+    const result = await db.insert(schema.facultyAvailability)
+        .values({ facultyId: data.facultyId, availability: data.availability })
+        .onConflictDoUpdate({ target: schema.facultyAvailability.facultyId, set: { availability: data.availability } })
+        .returning();
+    return c.json(result[0]);
 });
 
 app.post('/settings/global', async (c) => {
-    const newGlobalConstraints = await c.req.json() as GlobalConstraints;
-    const { id, ...dataToUpdate } = newGlobalConstraints;
-    
-    // When a user saves, reset the AI weights to match the new base weights.
-    // This lets the AI learn from a new baseline.
-    const updatePayload = {
-        ...dataToUpdate,
-        aiStudentGapWeight: dataToUpdate.studentGapWeight,
-        aiFacultyGapWeight: dataToUpdate.facultyGapWeight,
-        aiFacultyWorkloadDistributionWeight: dataToUpdate.facultyWorkloadDistributionWeight,
-        aiFacultyPreferenceWeight: dataToUpdate.facultyPreferenceWeight,
-    };
+    const data: GlobalConstraints = await c.req.json();
+    try {
+        // Use a more robust UPSERT pattern. This will update the row if it exists,
+        // or insert it if it doesn't (which is unlikely but safe).
+        // This is more reliable than a separate UPDATE then SELECT.
+        const { id, ...constraintsToUpdate } = data;
+        const result = await db.insert(schema.globalConstraints)
+            .values(data)
+            .onConflictDoUpdate({
+                target: schema.globalConstraints.id,
+                set: constraintsToUpdate
+            })
+            .returning();
+        
+        if (result && result.length > 0) {
+            return c.json(result[0]);
+        }
+        // Fallback for drivers that don't support returning() on upsert well.
+        const fallbackResult = await db.select().from(schema.globalConstraints).where(eq(schema.globalConstraints.id, 1));
+        if (fallbackResult.length > 0) return c.json(fallbackResult[0]);
 
-    const results = await db.update(schema.globalConstraints)
-        .set(updatePayload)
-        .where(eq(schema.globalConstraints.id, id || 1))
-        .returning();
+        return c.json({ message: 'Failed to save or retrieve constraints after update.' }, 500);
 
-    return c.json(results[0]);
+    } catch (error: any) {
+        console.error('Error updating global constraints:', error);
+        return c.json({ message: 'Database error during constraints update.', error: error.message }, 500);
+    }
 });
 
-export { app };
+app.post('/settings/timetable', async (c) => {
+    const data: TimetableSettings = await c.req.json();
+    try {
+        // Use a more robust UPSERT pattern. This will update the row if it exists,
+        // or insert it if it doesn't (which is unlikely but safe).
+        // This is more reliable than a separate UPDATE then SELECT.
+        const { id, ...settingsToUpdate } = data;
+        const result = await db.insert(schema.timetableSettings)
+            .values(data)
+            .onConflictDoUpdate({
+                target: schema.timetableSettings.id,
+                set: settingsToUpdate
+            })
+            .returning();
+
+        if (result && result.length > 0) {
+            return c.json(result[0]);
+        }
+        
+        // Fallback for drivers that don't support returning() on upsert well.
+        const fallbackResult = await db.select().from(schema.timetableSettings).where(eq(schema.timetableSettings.id, 1));
+        if (fallbackResult.length > 0) return c.json(fallbackResult[0]);
+
+        return c.json({ message: 'Failed to save or retrieve settings after update.' }, 500);
+
+    } catch (error: any) {
+        console.error('Error updating timetable settings:', error);
+        return c.json({ message: 'Database error during settings update.', error: error.message }, 500);
+    }
+});

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { PlusCircle, AlertTriangle } from 'lucide-react';
@@ -20,16 +20,41 @@ const TABS: { id: DataType, label: string }[] = [
 ];
 
 const DataManagement: React.FC = () => {
-    const { subjects, faculty, rooms, batches, departments, users, refreshData } = useAppContext();
+    const { 
+        subjects, faculty, rooms, batches, departments, users, refreshData, loadingStates,
+        fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments, fetchUsers 
+    } = useAppContext();
     const [activeTab, setActiveTab] = useState<DataType>('subjects');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<any | null>(null);
     const toast = useToast();
 
+    const fetcherMap = useMemo(() => ({
+        subjects: fetchSubjects,
+        faculty: fetchFaculty,
+        rooms: fetchRooms,
+        batches: fetchBatches,
+        departments: fetchDepartments,
+    }), [fetchSubjects, fetchFaculty, fetchRooms, fetchBatches, fetchDepartments]);
+
+    useEffect(() => {
+        // Fetch data for the current tab
+        fetcherMap[activeTab]();
+
+        // Also pre-fetch data needed for modals/relations
+        if (activeTab === 'faculty') fetchSubjects();
+        if (activeTab === 'batches') {
+            fetchSubjects();
+            fetchDepartments();
+            fetchFaculty();
+            fetchRooms();
+        }
+    }, [activeTab, fetcherMap]);
+
     const dataMap = { subjects, faculty, rooms, batches, departments };
     const currentData = dataMap[activeTab];
 
-    const handleSave = async (item: any) => {
+    const handleSave = useCallback(async (item: any) => {
         try {
             const saveFns: Record<DataType, (data: any) => Promise<any>> = {
                 subjects: api.saveSubject,
@@ -46,9 +71,9 @@ const DataManagement: React.FC = () => {
         } catch (error: any) {
             toast.error(error.message || `Failed to save ${activeTab}.`);
         }
-    };
+    }, [activeTab, refreshData, toast]);
     
-    const handleDelete = async (item: any) => {
+    const handleDelete = useCallback(async (item: any) => {
          if (!window.confirm("Are you sure you want to delete this item?")) return;
         try {
             const deleteFns: Record<DataType, (id: string) => Promise<any>> = {
@@ -64,7 +89,7 @@ const DataManagement: React.FC = () => {
         } catch (error: any) {
             toast.error(error.message || `Failed to delete item.`);
         }
-    };
+    }, [activeTab, refreshData, toast]);
 
     const columnsMap: Record<DataType, any[]> = useMemo(() => ({
         subjects: [
@@ -210,6 +235,7 @@ const DataManagement: React.FC = () => {
                     data={currentData}
                     onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }}
                     onDelete={handleDelete}
+                    isLoading={loadingStates[activeTab]}
                 />
 
             </GlassPanel>

@@ -119,7 +119,6 @@ const Homepage: React.FC<HomepageProps> = ({ onGoToApp, onShowHowItWorks, onShow
                       <FeatureDetailCard icon={Dna} title="Hyper-Heuristic Genetic Algorithm">The core evolutionary engine that intelligently breeds, mutates, and evolves millions of potential timetables to find the fittest solutions.</FeatureDetailCard>
                       <FeatureDetailCard icon={BrainCircuit} title="Three-Level Gemini Integration">Goes beyond simple AI. Gemini acts as a self-tuning judge, a master strategist for the algorithm, and a creative problem-solver to break through optimization deadlocks.</FeatureDetailCard>
                       <FeatureDetailCard icon={Copy} title="Multi-Candidate Generation">Why settle for one? The engine produces several distinct, high-quality timetable candidates, each with a detailed scorecard, giving you the power of choice.</FeatureDetailCard>
-                      {/* FIX: Replaced non-existent CheckShield icon with ShieldCheck. */}
                       <FeatureDetailCard icon={ShieldCheck} title="Conflict-Free by Design">Hard constraints are the bedrock of the engine. All generated solutions are guaranteed to be free of faculty, room, and batch clashes.</FeatureDetailCard>
                       <FeatureDetailCard icon={Goal} title="Sophisticated Fitness Scoring">Every candidate is meticulously scored against soft constraints like minimizing student/faculty gaps, balancing workloads, and respecting preferences.</FeatureDetailCard>
                   </div>
@@ -129,7 +128,6 @@ const Homepage: React.FC<HomepageProps> = ({ onGoToApp, onShowHowItWorks, onShow
                   <h4 className="text-xl font-bold text-[var(--accent)] mb-6 text-center">Comprehensive Scheduling & Control</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       <FeatureDetailCard icon={Blocks} title="Multi-Batch Master Scheduling">Generate complex master timetables that seamlessly coordinate schedules across multiple batches, semesters, and even entire departments.</FeatureDetailCard>
-                      {/* FIX: Replaced non-existent MousePointerSquare icon with MousePointer. */}
                       <FeatureDetailCard icon={MousePointer} title="Interactive Visual Editor">Manually refine AI-generated drafts with an intuitive drag-and-drop interface, giving you the perfect blend of automation and human control.</FeatureDetailCard>
                       <FeatureDetailCard icon={AlertTriangle} title="Real-Time Conflict Highlighting">Your intelligent co-pilot. The visual editor instantly flags any manual change that creates a faculty or room conflict, preventing errors before they happen.</FeatureDetailCard>
                       <FeatureDetailCard icon={History} title="Full Version Control">Never lose your work. Save multiple drafts for any timetable, allowing for easy comparison, iteration, and rollback to previous versions.</FeatureDetailCard>
@@ -153,7 +151,6 @@ const Homepage: React.FC<HomepageProps> = ({ onGoToApp, onShowHowItWorks, onShow
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                       <FeatureDetailCard icon={Library} title="Unified Data Hub">A single source of truth for all institutional data: Subjects, Faculty, Rooms, Batches, and Departments, with full CRUD functionality.</FeatureDetailCard>
                       <FeatureDetailCard icon={UserPlus} title="Automatic Credential Generation">Streamline onboarding. Adding a new faculty member automatically creates their user account and a unique, secure login email.</FeatureDetailCard>
-                      {/* FIX: Replaced non-existent UsersCog icon with UserCog. */}
                       <FeatureDetailCard icon={UserCog} title="Full User Management">Admins can create, edit, and delete any user account and assign specific roles, maintaining complete control over the system.</FeatureDetailCard>
                       <FeatureDetailCard icon={Shield} title="Role-Based Access Control (RBAC)">A robust permission system ensures users only see and interact with the features relevant to their role (Admin, Manager, HOD, Faculty, Student).</FeatureDetailCard>
                       <FeatureDetailCard icon={RefreshCw} title="System Reset Functionality">A secure 'danger zone' feature for SuperAdmins to completely reset the application database to its initial seed state for a clean start.</FeatureDetailCard>

@@ -1,20 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { useAppContext } from './hooks/useAppContext';
 import { Layout } from './components/Layout';
 import LoginPage from './pages/LoginPage';
-import Dashboard from './pages/Dashboard';
-import MyTimetable from './pages/MyTimetable';
-import Scheduler from './pages/Scheduler';
-import DataManagement from './pages/DataManagement';
-import Constraints from './pages/Constraints';
-import Reports from './pages/Reports';
-import Settings from './pages/Settings';
 import Homepage from './pages/Homepage';
 import PublicHowItWorks from './pages/PublicHowItWorks';
 import PublicAlgorithmDeepDive from './pages/PublicAlgorithmDeepDive';
+import { GlassPanel } from './components/GlassPanel';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+
+// Lazy load all page components for code-splitting
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const MyTimetable = lazy(() => import('./pages/MyTimetable'));
+const Scheduler = lazy(() => import('./pages/Scheduler'));
+const DataManagement = lazy(() => import('./pages/DataManagement'));
+const Constraints = lazy(() => import('./pages/Constraints'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Settings = lazy(() => import('./pages/Settings'));
+
+const PageLoader: React.FC = () => (
+  <div className="flex justify-center items-center h-64">
+    <Loader2 className="animate-spin h-8 w-8 text-accent" />
+  </div>
+);
+
 
 const App: React.FC = () => {
-  const { user, currentPage, isLoading } = useAppContext();
+  const { user, currentPage, isLoading, appInitializationError } = useAppContext();
   const [publicPage, setPublicPage] = useState<'Homepage' | 'HowItWorks' | 'AlgorithmDeepDive'>('Homepage');
   const [showLogin, setShowLogin] = useState(false);
 
@@ -34,7 +45,27 @@ const App: React.FC = () => {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
-        <p className="text-white text-lg animate-pulse">Loading Application...</p>
+        <Loader2 className="h-10 w-10 text-accent animate-spin" />
+      </div>
+    );
+  }
+
+  // FIX: Added a dedicated error screen for critical startup failures.
+  if (appInitializationError) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
+        <GlassPanel className="max-w-3xl p-8 text-center border-danger">
+          <AlertTriangle className="mx-auto h-12 w-12 text-danger" />
+          <h1 className="mt-4 text-2xl font-bold text-white">Application Startup Failed</h1>
+          <p className="mt-2 text-text-muted">A critical error occurred while connecting to the backend services.</p>
+          <div className="mt-4 p-4 bg-panel-strong rounded-lg text-left font-mono text-sm text-red-400 overflow-x-auto">
+            <code>{appInitializationError}</code>
+          </div>
+          <p className="mt-4 text-sm text-text-muted">
+            If you are running this locally, please ensure your backend server is running and the database schema has been pushed using 
+            <code className="bg-panel-strong px-2 py-1 rounded-md text-white mx-1">npx drizzle-kit push</code>.
+          </p>
+        </GlassPanel>
       </div>
     );
   }
@@ -58,7 +89,9 @@ const App: React.FC = () => {
 
   return (
     <Layout>
-      {renderPage()}
+      <Suspense fallback={<PageLoader />}>
+        {renderPage()}
+      </Suspense>
     </Layout>
   );
 };

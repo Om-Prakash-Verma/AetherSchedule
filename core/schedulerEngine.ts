@@ -1,6 +1,7 @@
-import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid } from '../types';
+import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid, TimetableSettings, PinnedAssignment } from '../types';
 import { isFacultyAvailable, isRoomAvailable, isBatchAvailable } from './conflictChecker';
 import { GoogleGenAI, Type } from "@google/genai";
+import { generateTimeSlots } from '../utils/time';
 
 // --- GEMINI API INITIALIZATION ---
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
@@ -14,7 +15,7 @@ interface SchedulerInput {
   constraints: Constraints;
   globalConstraints: GlobalConstraints;
   days: string[];
-  slots: string[];
+  timetableSettings: TimetableSettings,
   candidateCount: number;
 }
 
@@ -126,22 +127,55 @@ interface ClassRequirement {
 }
 
 // --- INITIALIZATION ---
-const getRequiredClasses = (batches: Batch[], allSubjects: Subject[]): ClassRequirement[] => {
-    return batches.flatMap(batch => 
-        allSubjects
-            .filter(s => batch.subjectIds.includes(s.id))
-            .flatMap(subject => Array(subject.hoursPerWeek).fill({ subject, batch }))
-    );
+const getRequiredClasses = (
+    batches: Batch[],
+    allSubjects: Subject[],
+    pinnedAssignments: PinnedAssignment[]
+): ClassRequirement[] => {
+    const classesToSchedule: ClassRequirement[] = [];
+
+    for (const batch of batches) {
+        for (const subjectId of batch.subjectIds) {
+            const subject = allSubjects.find(s => s.id === subjectId);
+            if (!subject) continue;
+
+            // Calculate how many hours are already covered by pins for this specific batch & subject
+            let pinnedHours = 0;
+            const relevantPins = pinnedAssignments.filter(p => p.batchId === batch.id && p.subjectId === subject.id);
+            for (const pin of relevantPins) {
+                // The total hours for a pin is the product of days, slots per day, and duration per slot.
+                pinnedHours += pin.days.length * pin.startSlots.length * pin.duration;
+            }
+
+            const remainingHours = Math.max(0, subject.hoursPerWeek - pinnedHours);
+
+            for (let i = 0; i < remainingHours; i++) {
+                classesToSchedule.push({ subject, batch });
+            }
+        }
+    }
+    return classesToSchedule;
 };
 
 const createChromosome = (
-    requiredClasses: ClassRequirement[],
+    requiredClasses: ClassRequirement[], // This is now the list of REMAINING classes to schedule
+    slots: string[],
+    pinnedClassAssignments: ClassAssignment[], // The fully expanded list of individual pinned slots
     input: Omit<SchedulerInput, 'candidateCount'>
 ): Chromosome => {
-    const { batches, allFaculty, allRooms, constraints, globalConstraints, days, slots, approvedTimetables } = input;
+    const { batches, allFaculty, allRooms, constraints, globalConstraints, days, approvedTimetables } = input;
     const timetable: TimetableGrid = {};
     batches.forEach(b => timetable[b.id] = {}); // Initialize grids for all batches
-    
+
+    // Step 1: Pre-populate the grid with pinned assignments. They are the fixed foundation.
+    for (const pin of pinnedClassAssignments) {
+        if (!timetable[pin.batchId]) timetable[pin.batchId] = {};
+        const batchGrid = timetable[pin.batchId];
+        if (!batchGrid[pin.day]) batchGrid[pin.day] = {};
+        batchGrid[pin.day][pin.slot] = pin;
+    }
+
+    // Step 2: Schedule the REMAINING flexible classes into the available slots.
     const approvedAssignments = approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
     const shuffledClasses = [...requiredClasses].sort(() => Math.random() - 0.5);
 
@@ -151,11 +185,12 @@ const createChromosome = (
             .sort(() => Math.random() - 0.5);
         
         for (const { day, slot } of potentialSlots) {
+            // The `timetable` object already contains the pinned assignments, so they are part of the draft.
             const currentDraftAssignments = flattenTimetable(timetable);
+            // We only need to check against other approved timetables and the current draft.
             const allExistingAssignments = [...approvedAssignments, ...currentDraftAssignments];
 
-            // Check if THIS BATCH is available
-            if (isBatchAvailable(timetable[req.batch.id], day, slot)) {
+            if (isBatchAvailable(req.batch.id, day, slot, allExistingAssignments)) {
                 
                 const batchFacultyPool = (req.batch.allocatedFacultyIds && req.batch.allocatedFacultyIds.length > 0)
                     ? allFaculty.filter(f => req.batch.allocatedFacultyIds!.includes(f.id))
@@ -196,10 +231,12 @@ const createChromosome = (
 // --- ADVANCED OPERATOR: GREEDY REPAIR ---
 const greedyRepair = (
     chromosome: Chromosome, 
-    requiredClasses: ClassRequirement[], 
+    requiredClasses: ClassRequirement[],
+    slots: string[],
+    pinnedClassAssignments: ClassAssignment[],
     input: Omit<SchedulerInput, 'candidateCount'>
 ): Chromosome => {
-    const { batches, allFaculty, allRooms, constraints, globalConstraints, days, slots, approvedTimetables } = input;
+    const { batches, allFaculty, allRooms, constraints, globalConstraints, days, approvedTimetables } = input;
     let timetable: TimetableGrid = JSON.parse(JSON.stringify(chromosome.timetable));
     const approvedAssignments = approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
 
@@ -232,9 +269,10 @@ const greedyRepair = (
 
     // Intelligent placement for missing classes
     for (const req of missingClasses) {
+        const allCurrentAssignments = [...approvedAssignments, ...flattenTimetable(timetable)];
         const potentialSlots = days
             .flatMap((_, dayIndex) => slots.map((_, slotIndex) => ({ day: dayIndex, slot: slotIndex })))
-            .filter(({ day, slot }) => isBatchAvailable(timetable[req.batch.id], day, slot));
+            .filter(({ day, slot }) => isBatchAvailable(req.batch.id, day, slot, allCurrentAssignments));
             
         let bestSlot: { day: number; slot: number } | null = null;
         
@@ -353,7 +391,7 @@ const geminiCreativeIntervention = async (stuckChromosome: Chromosome, input: Om
 // --- LOW-LEVEL HEURISTICS ---
 const tournamentSelection = (population: Chromosome[]): Chromosome => { /* ... (no changes) ... */ let best: Chromosome | null = null; for (let i = 0; i < TOURNAMENT_SIZE; i++) { const ind = population[Math.floor(Math.random() * population.length)]; if (best === null || ind.metrics.score > best.metrics.score) best = ind; } return best!; };
 
-const swapMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
+const swapMutate = (chromosome: Chromosome, pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
     const { batches, allFaculty, globalConstraints } = input;
     const timetable = JSON.parse(JSON.stringify(chromosome.timetable)) as TimetableGrid;
     
@@ -369,6 +407,11 @@ const swapMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candida
 
     if (as1.id === as2.id) return chromosome;
 
+    // A pinned assignment must never be swapped.
+    if (pinnedClassAssignments.some(p => p.id === as1.id || p.id === as2.id)) {
+        return chromosome;
+    }
+
     // Swap positions
     const tempDay = as1.day, tempSlot = as1.slot;
     batchGrid[as1.day][as1.slot] = { ...as2, day: as1.day, slot: as1.slot };
@@ -377,8 +420,8 @@ const swapMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candida
     return { timetable, metrics: calculateMetrics(timetable, batches, allFaculty, globalConstraints) };
 };
 
-const moveMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
-    const { batches, allFaculty, globalConstraints, days, slots } = input;
+const moveMutate = (chromosome: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
+    const { batches, allFaculty, globalConstraints, days, approvedTimetables } = input;
     const timetable = JSON.parse(JSON.stringify(chromosome.timetable)) as TimetableGrid;
 
     const batchIdsWithClasses = Object.keys(timetable).filter(bId => flattenTimetable({[bId]: timetable[bId]}).length > 0);
@@ -389,8 +432,14 @@ const moveMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candida
     const assignments = Object.values(batchGrid).flatMap(d => Object.values(d));
     const toMove = assignments[Math.floor(Math.random() * assignments.length)];
     
+    // A pinned assignment must never be moved.
+    if (pinnedClassAssignments.some(p => p.id === toMove.id)) {
+        return chromosome;
+    }
+
+    const allCurrentAssignments = [...approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable)), ...flattenTimetable(timetable)];
     const potentialSlots = days.flatMap((_, d) => slots.map((_, s) => ({ day: d, slot: s })))
-        .filter(p => !batchGrid[p.day] || !batchGrid[p.day][p.slot]);
+        .filter(p => isBatchAvailable(batchIdToMutate, p.day, p.slot, allCurrentAssignments));
 
     if (potentialSlots.length === 0) return chromosome;
 
@@ -406,7 +455,7 @@ const moveMutate = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candida
     return { timetable, metrics: calculateMetrics(timetable, batches, allFaculty, globalConstraints) };
 };
 
-const dayWiseCrossover = (p1: Chromosome, p2: Chromosome, input: Omit<SchedulerInput, 'candidateCount'>, reqs: ClassRequirement[]): Chromosome => {
+const dayWiseCrossover = (p1: Chromosome, p2: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>, reqs: ClassRequirement[]): Chromosome => {
     const { batches, days } = input;
     const offspringTimetable: TimetableGrid = {};
     batches.forEach(b => offspringTimetable[b.id] = {});
@@ -426,12 +475,22 @@ const dayWiseCrossover = (p1: Chromosome, p2: Chromosome, input: Omit<SchedulerI
         }
         offspringTimetable[batchId] = offspringBatchGrid;
     }
+    
+    // Re-enforce pinned assignments. Crossover might have removed them.
+    for (const pin of pinnedClassAssignments) {
+        if (!offspringTimetable[pin.batchId]) offspringTimetable[pin.batchId] = {};
+        const batchGrid = offspringTimetable[pin.batchId];
+        if (!batchGrid[pin.day]) batchGrid[pin.day] = {};
+        batchGrid[pin.day][pin.slot] = pin; // This might overwrite a crossed-over class.
+    }
+
 
     const child = { timetable: offspringTimetable, metrics: { score: -1 } as any };
-    return greedyRepair(child, reqs, input);
+    // greedyRepair will fix any missing classes that resulted from the crossover or pin enforcement.
+    return greedyRepair(child, reqs, slots, pinnedClassAssignments, input);
 };
 
-const simulatedAnnealingOperator = (chromosome: Chromosome, input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => { /* ... (no changes) ... */ let current = JSON.parse(JSON.stringify(chromosome)); let best = JSON.parse(JSON.stringify(chromosome)); let temp = SA_INITIAL_TEMPERATURE; while (temp > SA_MIN_TEMPERATURE) { for (let i = 0; i < SA_ITERATIONS_PER_TEMP; i++) { const neighbor = moveMutate(current, input); if (neighbor.metrics.score > current.metrics.score || Math.random() < Math.exp((neighbor.metrics.score - current.metrics.score) / temp)) { current = neighbor; if (neighbor.metrics.score > best.metrics.score) best = neighbor; } } temp *= SA_COOLING_RATE; } return best; };
+const simulatedAnnealingOperator = (chromosome: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => { let current = JSON.parse(JSON.stringify(chromosome)); let best = JSON.parse(JSON.stringify(chromosome)); let temp = SA_INITIAL_TEMPERATURE; while (temp > SA_MIN_TEMPERATURE) { for (let i = 0; i < SA_ITERATIONS_PER_TEMP; i++) { const neighbor = moveMutate(current, slots, pinnedClassAssignments, input); if (neighbor.metrics.score > current.metrics.score || Math.random() < Math.exp((neighbor.metrics.score - current.metrics.score) / temp)) { current = neighbor; if (neighbor.metrics.score > best.metrics.score) best = neighbor; } } temp *= SA_COOLING_RATE; } return best; };
 
 // Helper to select a heuristic based on weighted probabilities
 const selectHeuristic = (phaseProbabilities: Record<string, number>): LowLevelHeuristic => {
@@ -450,15 +509,42 @@ const selectHeuristic = (phaseProbabilities: Record<string, number>): LowLevelHe
  * Main optimization function, now using a pre-emptive AI strategy for speed.
  */
 export const runOptimization = async (input: SchedulerInput): Promise<{ timetable: TimetableGrid, metrics: TimetableMetrics }[]> => {
-    const { candidateCount, batches, allSubjects } = input;
-    const requiredClasses = getRequiredClasses(batches, allSubjects);
+    const { candidateCount, batches, allSubjects, timetableSettings, constraints } = input;
+    const timeSlots = generateTimeSlots(timetableSettings);
     
+    // --- FEATURE IMPLEMENTATION: Process Pinned Assignments ---
+    const pinnedClassAssignments: ClassAssignment[] = [];
+    for (const pin of constraints.pinnedAssignments) {
+        for (const day of pin.days) {
+            for (const startSlot of pin.startSlots) {
+                for (let i = 0; i < pin.duration; i++) {
+                    const slot = startSlot + i;
+                    if (slot < timeSlots.length) { // Ensure slot is within bounds
+                        pinnedClassAssignments.push({
+                            // Use a consistent ID format to protect pins from mutation
+                            id: `pin_${pin.id}_${day}_${slot}`,
+                            subjectId: pin.subjectId,
+                            facultyId: pin.facultyId,
+                            roomId: pin.roomId,
+                            batchId: pin.batchId,
+                            day: day,
+                            slot: slot,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Calculate REMAINING classes to schedule after accounting for pins.
+    const requiredClasses = getRequiredClasses(batches, allSubjects, constraints.pinnedAssignments);
+
     // --- SINGLE, UPFRONT AI STRATEGY CALL ---
     console.log("Consulting Gemini AI for a high-level optimization strategy...");
     const aiStrategy = await getGeminiPhaseStrategy(input);
     
     console.log("Initializing population...");
-    let population: Chromosome[] = Array.from({ length: POPULATION_SIZE }, () => createChromosome(requiredClasses, input));
+    let population: Chromosome[] = Array.from({ length: POPULATION_SIZE }, () => createChromosome(requiredClasses, timeSlots, pinnedClassAssignments, input));
 
     let bestScoreSoFar = -Infinity;
     let stagnationCounter = 0;
@@ -492,11 +578,12 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
         while (newPopulation.length < POPULATION_SIZE) {
             const heuristicToUse = selectHeuristic(currentPhaseProbabilities);
             let newIndividual: Chromosome;
+            const parent = tournamentSelection(population);
             switch (heuristicToUse) {
-                case LowLevelHeuristic.DAY_WISE_CROSSOVER: newIndividual = dayWiseCrossover(tournamentSelection(population), tournamentSelection(population), input, requiredClasses); break;
-                case LowLevelHeuristic.SWAP_MUTATE: newIndividual = swapMutate(tournamentSelection(population), input); break;
-                case LowLevelHeuristic.MOVE_MUTATE: newIndividual = moveMutate(tournamentSelection(population), input); break;
-                case LowLevelHeuristic.SIMULATED_ANNEALING: newIndividual = simulatedAnnealingOperator(tournamentSelection(population), input); break;
+                case LowLevelHeuristic.DAY_WISE_CROSSOVER: newIndividual = dayWiseCrossover(parent, tournamentSelection(population), timeSlots, pinnedClassAssignments, input, requiredClasses); break;
+                case LowLevelHeuristic.SWAP_MUTATE: newIndividual = swapMutate(parent, pinnedClassAssignments, input); break;
+                case LowLevelHeuristic.MOVE_MUTATE: newIndividual = moveMutate(parent, timeSlots, pinnedClassAssignments, input); break;
+                case LowLevelHeuristic.SIMULATED_ANNEALING: newIndividual = simulatedAnnealingOperator(parent, timeSlots, pinnedClassAssignments, input); break;
             }
             newPopulation.push(newIndividual);
         }

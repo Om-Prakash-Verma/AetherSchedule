@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
@@ -10,6 +10,7 @@ import { AvailabilityMatrix } from '../components/AvailabilityMatrix';
 import { DataTable } from '../components/DataTable';
 import { DataFormModal } from '../components/DataFormModal';
 import type { FacultyAvailability, PinnedAssignment, PlannedLeave } from '../types';
+import { DAYS_OF_WEEK } from '../constants';
 
 type ConstraintType = 'availability' | 'pinned' | 'leaves';
 
@@ -21,12 +22,32 @@ const TABS: { id: ConstraintType, label: string }[] = [
 
 
 const Constraints: React.FC = () => {
-    const { constraints, faculty, refreshData, subjects, batches } = useAppContext();
+    const { 
+        constraints, faculty, refreshData, subjects, batches, timeSlots,
+        fetchConstraints, fetchFaculty, fetchSubjects, fetchBatches, loadingStates
+    } = useAppContext();
     const [activeTab, setActiveTab] = useState<ConstraintType>('availability');
-    const [selectedFacultyId, setSelectedFacultyId] = useState<string>(faculty[0]?.id || '');
+    const [selectedFacultyId, setSelectedFacultyId] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<any | null>(null);
     const toast = useToast();
+
+    useEffect(() => {
+        fetchConstraints();
+        fetchFaculty();
+        // Fetch data needed for dropdowns in modals
+        if (activeTab === 'pinned') {
+            fetchSubjects();
+            fetchBatches();
+        }
+    }, [activeTab, fetchConstraints, fetchFaculty, fetchSubjects, fetchBatches]);
+
+    useEffect(() => {
+        // Set default selected faculty once faculty data is loaded
+        if (faculty.length > 0 && !selectedFacultyId) {
+            setSelectedFacultyId(faculty[0].id);
+        }
+    }, [faculty, selectedFacultyId]);
 
     const currentAvailability = constraints.facultyAvailability.find(a => a.facultyId === selectedFacultyId)?.availability;
 
@@ -74,6 +95,9 @@ const Constraints: React.FC = () => {
         { accessor: 'batchId', header: 'Batch', render: (item) => batches.find(b=>b.id === item.batchId)?.name || 'N/A' },
         { accessor: 'subjectId', header: 'Subject', render: (item) => subjects.find(s=>s.id === item.subjectId)?.code || 'N/A' },
         { accessor: 'facultyId', header: 'Faculty', render: (item) => faculty.find(f=>f.id === item.facultyId)?.name || 'N/A' },
+        { accessor: 'days', header: 'Days', render: (item) => item.days?.map(d => DAYS_OF_WEEK[d]?.substring(0,3) || '?').join(', ') },
+        { accessor: 'startSlots', header: 'Times', render: (item) => item.startSlots?.map(s => timeSlots[s]?.split(' ')[0] || '?').join(', ') },
+        { accessor: 'duration', header: 'Duration' },
     ];
     
     const leaveColumns: { header: string; accessor: keyof PlannedLeave; render?: (item: PlannedLeave) => React.ReactNode; }[] = [
@@ -90,13 +114,20 @@ const Constraints: React.FC = () => {
                     <div>
                         <div className="mb-4 max-w-xs">
                             <label className="text-sm text-text-muted mb-1 block">Select Faculty</label>
-                            <GlassSelect value={selectedFacultyId} onChange={e => setSelectedFacultyId(e.target.value)}>
-                                <option value="">Select a faculty member...</option>
-                                {faculty.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
-                            </GlassSelect>
+                            <GlassSelect 
+                                value={selectedFacultyId} 
+                                onChange={value => setSelectedFacultyId(String(value))}
+                                placeholder="Select a faculty member..."
+                                options={faculty.map(f => ({ value: f.id, label: f.name }))}
+                            />
                         </div>
                         {selectedFacultyId ? (
-                             <AvailabilityMatrix availability={currentAvailability!} onChange={handleAvailabilityChange} />
+                             <>
+                                <p className="text-sm text-text-muted mb-4">
+                                    Click and drag to quickly set availability. Changes are saved automatically when you release the mouse button.
+                                </p>
+                                <AvailabilityMatrix availability={currentAvailability!} onChange={handleAvailabilityChange} />
+                            </>
                         ) : (
                             <p className="text-text-muted text-center py-8">Select a faculty member to edit their availability.</p>
                         )}
@@ -108,7 +139,13 @@ const Constraints: React.FC = () => {
                         <div className="flex justify-end mb-4">
                            <GlassButton icon={PlusCircle} onClick={() => { setEditingItem(null); setIsModalOpen(true); }}>Add Pinned Assignment</GlassButton>
                         </div>
-                        <DataTable<PinnedAssignment> columns={pinnedColumns} data={constraints.pinnedAssignments} onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} onDelete={handleDelete} />
+                        <DataTable<PinnedAssignment> 
+                            columns={pinnedColumns} 
+                            data={constraints.pinnedAssignments} 
+                            onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} 
+                            onDelete={handleDelete}
+                            isLoading={loadingStates.constraints}
+                        />
                     </div>
                 );
             case 'leaves':
@@ -117,7 +154,13 @@ const Constraints: React.FC = () => {
                         <div className="flex justify-end mb-4">
                            <GlassButton icon={PlusCircle} onClick={() => { setEditingItem(null); setIsModalOpen(true); }}>Add Planned Leave</GlassButton>
                         </div>
-                        <DataTable<PlannedLeave> columns={leaveColumns} data={constraints.plannedLeaves} onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} onDelete={handleDelete} />
+                        <DataTable<PlannedLeave> 
+                            columns={leaveColumns} 
+                            data={constraints.plannedLeaves} 
+                            onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} 
+                            onDelete={handleDelete}
+                            isLoading={loadingStates.constraints}
+                        />
                     </div>
                 );
             default: return null;

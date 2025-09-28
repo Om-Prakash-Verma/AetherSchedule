@@ -40,8 +40,13 @@ export const isRoomAvailable = (
     return !allAssignments.some(a => a.day === day && a.slot === slot && a.roomId === roomId);
 };
 
-export const isBatchAvailable = (batchGrid: SingleBatchTimetableGrid, day: number, slot: number): boolean => {
-    return !(batchGrid[day] && batchGrid[day][slot]);
+export const isBatchAvailable = (
+    batchId: string,
+    day: number,
+    slot: number,
+    allAssignments: ClassAssignment[]
+): boolean => {
+    return !allAssignments.some(a => a.day === day && a.slot === slot && a.batchId === batchId);
 };
 
 export const checkConflicts = (

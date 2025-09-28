@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
-import { GroupedMultiSelectDropdown } from '../components/ui/GroupedMultiSelectDropdown';
+import { BatchSelectorModal } from '../components/BatchSelectorModal';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
 import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid } from '../types';
-import { Zap, Save, ChevronLeft, ChevronRight, Download, Calendar, Send, Check, X, Loader2 } from 'lucide-react';
+import { Zap, Save, ChevronLeft, ChevronRight, Download, Calendar, Send, Check, X, Loader2, ChevronDown } from 'lucide-react';
 import { TimetableView } from '../components/TimetableView';
 import { exportTimetableToCsv, exportTimetableToIcs } from '../utils/export';
 import { checkConflicts } from '../core/conflictChecker';
@@ -31,7 +31,10 @@ const flattenTimetable = (timetable: TimetableGrid): ClassAssignment[] => {
 
 
 const Scheduler: React.FC = () => {
-    const { user, batches, subjects, faculty, rooms, departments, generatedTimetables, refreshData } = useAppContext();
+    const { 
+        user, batches, subjects, faculty, rooms, departments, generatedTimetables, refreshData, timeSlots,
+        fetchBatches, fetchSubjects, fetchFaculty, fetchRooms, fetchDepartments, fetchTimetables 
+    } = useAppContext();
     const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [candidates, setCandidates] = useState<GeneratedTimetable[]>([]);
@@ -41,7 +44,18 @@ const Scheduler: React.FC = () => {
     const [editedTimetable, setEditedTimetable] = useState<GeneratedTimetable | null>(null);
     const [isDirty, setIsDirty] = useState(false);
     const [conflictMap, setConflictMap] = useState<Map<string, Conflict[]>>(new Map());
+    const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
     const toast = useToast();
+    
+    useEffect(() => {
+        // Fetch all data required for the scheduler page to function
+        fetchBatches();
+        fetchDepartments();
+        fetchTimetables();
+        fetchSubjects();
+        fetchFaculty();
+        fetchRooms();
+    }, [fetchBatches, fetchDepartments, fetchTimetables, fetchSubjects, fetchFaculty, fetchRooms]);
 
     const batchOptions = useMemo(() => {
         return departments.map(dept => ({
@@ -87,7 +101,7 @@ const Scheduler: React.FC = () => {
         setIsDirty(false);
     }, [selectedTimetable, calculateConflicts]);
 
-    const handleDropAssignment = (change: DropChange) => {
+    const handleDropAssignment = useCallback((change: DropChange) => {
         if (!editedTimetable) return;
 
         const newGrid: TimetableGrid = JSON.parse(JSON.stringify(editedTimetable.timetable));
@@ -131,9 +145,9 @@ const Scheduler: React.FC = () => {
         setEditedTimetable(prev => prev ? { ...prev, timetable: newGrid } : null);
         setConflictMap(newConflictMap);
         setIsDirty(true);
-    };
+    }, [editedTimetable, calculateConflicts, toast]);
 
-    const handleUpdateDraft = async () => {
+    const handleUpdateDraft = useCallback(async () => {
         if (!editedTimetable || !isDirty) return;
         try {
             await api.updateTimetable(editedTimetable);
@@ -143,12 +157,17 @@ const Scheduler: React.FC = () => {
         } catch (error: any) {
             toast.error(error.message || 'Failed to update draft.');
         }
-    };
+    }, [editedTimetable, isDirty, refreshData, toast]);
 
     const handleBatchChange = (ids: string[]) => {
         setSelectedBatchIds(ids);
         setCandidates([]);
         setSelectedVersionId(null);
+    };
+    
+    const handleConfirmBatchSelection = (ids: string[]) => {
+        handleBatchChange(ids);
+        setIsBatchModalOpen(false);
     };
 
     const handleGenerate = useCallback(async () => {
@@ -240,176 +259,193 @@ const Scheduler: React.FC = () => {
     const firstBatchForExport = batches.find(b => b.id === selectedTimetable?.batchIds[0]);
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-1 space-y-6">
-                <GlassPanel className="p-4 relative z-10">
-                    <h2 className="text-lg font-bold mb-4">Controls</h2>
-                    <div className="space-y-4">
-                         <GroupedMultiSelectDropdown
-                            label="Select Batches"
-                            groupedOptions={batchOptions}
-                            selected={selectedBatchIds}
-                            onChange={handleBatchChange}
-                        />
-                        <GlassButton 
-                            icon={isLoading ? undefined : Zap} 
-                            onClick={handleGenerate} 
-                            disabled={isLoading || selectedBatchIds.length === 0} 
-                            className="w-full"
-                        >
-                            {isLoading ? 
-                                <span className="flex items-center justify-center">
-                                    <Loader2 className="animate-spin mr-2" size={16} /> Optimizing...
-                                </span> 
-                                : 'Generate New'
-                            }
-                        </GlassButton>
-                        {isLoading && (
-                            <p className="text-xs text-text-muted text-center mt-2">
-                                AI is devising a multi-phase optimization strategy... Then, executing a high-speed, self-correcting genetic evolution. This may take a moment.
-                            </p>
-                        )}
-                    </div>
-                </GlassPanel>
-
-                <GlassPanel className="p-4">
-                    <h2 className="text-lg font-bold mb-4">Saved Versions</h2>
-                    <div className="space-y-2 max-h-96 overflow-y-auto">
-                        {selectedBatchIds.length > 0 && savedVersions.length > 0 ? savedVersions.map(v => (
-                            <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setCandidates([]); }} 
-                                className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-white/10 border-transparent hover:border-white/20'}`}>
-                                <div className="flex justify-between items-center">
-                                    <p className="font-semibold text-white">Version {v.version}</p>
-                                    <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
-                                </div>
-                                <p className="text-xs text-text-muted mt-1">Created: {new Date(v.createdAt).toLocaleDateString()}</p>
-                            </button>
-                        )) : (
-                            <p className="text-sm text-text-muted text-center py-4">
-                                {selectedBatchIds.length > 0 ? 'No saved versions for this combination of batches.' : 'Select batches to see saved versions.'}
-                            </p>
-                        )}
-                    </div>
-                </GlassPanel>
-            </div>
-
-            <div className="lg:col-span-3 space-y-6">
-                {selectedTimetable && editedTimetable ? (
-                    <>
-                        <GlassPanel className="p-4">
-                            <div className="border-b border-[var(--border)] pb-4 mb-4 flex flex-wrap justify-between items-center gap-4">
-                                <div>
-                                     <h3 className="text-xl font-bold text-white">
-                                         {selectedTimetable.version ? `Version ${selectedTimetable.version}` : `Candidate ${selectedCandidateIndex + 1}/${candidates.length}`}
-                                     </h3>
-                                     <div className="flex items-center gap-2">
-                                        <p className="text-sm text-text-muted">Status: <span className={`font-semibold ${statusColors[selectedTimetable.status]}`}>{selectedTimetable.status}</span></p>
-                                        {isDirty && selectedTimetable.status === 'Draft' && (
-                                            <span className="px-2 py-0.5 text-xs rounded-full bg-orange-500/10 text-orange-400 font-semibold animate-pulse">Unsaved Changes</span>
-                                        )}
-                                     </div>
-                                 </div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    {selectedTimetable.version && firstBatchForExport && (
-                                         <>
-                                            <GlassButton variant="secondary" icon={Download} onClick={() => exportTimetableToCsv(selectedTimetable, firstBatchForExport, subjects, faculty, rooms)}>CSV</GlassButton>
-                                            <GlassButton variant="secondary" icon={Calendar} onClick={() => exportTimetableToIcs(selectedTimetable, firstBatchForExport, subjects, faculty, rooms)}>ICS</GlassButton>
-                                         </>
-                                    )}
-                                    {candidates.length > 0 && !selectedVersionId && (
-                                        <div className="flex items-center gap-2">
-                                            <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.max(0, p - 1))} disabled={selectedCandidateIndex === 0}><ChevronLeft size={16}/></GlassButton>
-                                            <span className="font-mono text-sm">{selectedCandidateIndex + 1} / {candidates.length}</span>
-                                            <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.min(candidates.length - 1, p + 1))} disabled={selectedCandidateIndex === candidates.length - 1}><ChevronRight size={16}/></GlassButton>
-                                            <GlassButton icon={Save} onClick={handleSaveCandidate}>Save as Draft</GlassButton>
-                                        </div>
-                                    )}
-                                    {selectedTimetable.version && selectedTimetable.status === 'Draft' && (
-                                        <GlassButton icon={Save} onClick={handleUpdateDraft} disabled={!isDirty}>Save Changes</GlassButton>
-                                    )}
-                                </div>
+        <>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="lg:col-span-1 space-y-6">
+                    <GlassPanel className="p-4 relative z-10">
+                        <h2 className="text-lg font-bold mb-4">Controls</h2>
+                        <div className="space-y-4">
+                             <div>
+                                <label className="block text-sm font-medium text-text-muted mb-1">Select Batches</label>
+                                <GlassButton
+                                    variant="secondary"
+                                    className="w-full justify-between items-center text-left"
+                                    onClick={() => setIsBatchModalOpen(true)}
+                                >
+                                    <span className="truncate pr-2">
+                                        {selectedBatchIds.length > 0 ? `${selectedBatchIds.length} batch(es) selected` : 'Click to select batches...'}
+                                    </span>
+                                    <ChevronDown className="h-4 w-4 text-text-muted shrink-0"/>
+                                </GlassButton>
                             </div>
-                             <div className="space-y-8">
-                                {editedTimetable.batchIds.map(batchId => {
-                                    const batch = batches.find(b => b.id === batchId);
-                                    if (!batch) return null;
-
-                                    const singleBatchGrid = editedTimetable.timetable[batchId] || {};
-                                    
-                                    // Create a temporary GeneratedTimetable-like object for TimetableView
-                                    const singleBatchTimetable = {
-                                        ...editedTimetable,
-                                        id: `${editedTimetable.id}_${batchId}`,
-                                        batchIds: [batchId],
-                                        timetable: singleBatchGrid, // This now expects SingleBatchTimetableGrid
-                                    };
-
-                                    return (
-                                        <div key={batchId}>
-                                            <h4 className="text-lg font-bold text-white mb-2">{batch.name}</h4>
-                                            <TimetableView
-                                                timetableData={singleBatchTimetable}
-                                                isEditable={editedTimetable.status === 'Draft'}
-                                                onDropAssignment={handleDropAssignment}
-                                                conflictMap={conflictMap}
-                                            />
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </GlassPanel>
-                        
-                        {selectedVersionId && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <GlassPanel className="p-4">
-                                    <h3 className="text-lg font-bold mb-4">Actions</h3>
-                                    <div className="space-y-2">
-                                        {canSubmit && (
-                                            <GlassButton 
-                                                onClick={() => handleUpdateStatus('Submitted')} 
-                                                disabled={selectedTimetable.status !== 'Draft' || isDirty} 
-                                                className="w-full"
-                                                title={isDirty ? "Please save your changes before submitting." : "Submit for final review"}
-                                            >
-                                                Submit for Review
-                                            </GlassButton>
-                                        )}
-                                        {canApprove && (
-                                            <div className="flex gap-2">
-                                                <GlassButton onClick={() => handleUpdateStatus('Approved')} disabled={selectedTimetable.status !== 'Submitted'} icon={Check} className="w-full">Approve</GlassButton>
-                                                <GlassButton onClick={() => handleUpdateStatus('Rejected')} disabled={selectedTimetable.status !== 'Submitted'} icon={X} variant="secondary" className="w-full hover:bg-red-500/20 hover:text-red-400">Reject</GlassButton>
-                                            </div>
-                                        )}
-                                        {!canSubmit && <p className="text-sm text-text-muted text-center py-2">You do not have permission to perform actions.</p>}
-                                    </div>
-                                </GlassPanel>
-                                <GlassPanel className="p-4 flex flex-col">
-                                    <h3 className="text-lg font-bold mb-4">Comments</h3>
-                                    <div className="space-y-3 max-h-48 overflow-y-auto mb-4 pr-2 flex-1">
-                                        {selectedTimetable.comments?.length > 0 ? selectedTimetable.comments.map((c, i) => (
-                                            <div key={i}>
-                                                <p className="font-semibold text-white text-sm">{c.userName}</p>
-                                                <p className="text-text-muted text-sm">{c.text}</p>
-                                            </div>
-                                        )) : <p className="text-sm text-text-muted">No comments yet.</p>}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a comment..." className="glass-input flex-1"/>
-                                        <GlassButton icon={Send} onClick={handleAddComment} disabled={!comment.trim()} />
-                                    </div>
-                                </GlassPanel>
-                            </div>
-                        )}
-                    </>
-                ) : (
-                    <GlassPanel className="p-6 text-center h-96 flex flex-col items-center justify-center">
-                        <Zap size={48} className="text-text-muted mb-4"/>
-                        <h3 className="text-xl font-bold text-white">No Timetable Selected</h3>
-                        <p className="text-text-muted mt-2">Generate new candidates or select a saved version.</p>
+                            <GlassButton 
+                                icon={isLoading ? undefined : Zap} 
+                                onClick={handleGenerate} 
+                                disabled={isLoading || selectedBatchIds.length === 0} 
+                                className="w-full"
+                            >
+                                {isLoading ? 
+                                    <span className="flex items-center justify-center">
+                                        <Loader2 className="animate-spin mr-2" size={16} /> Optimizing...
+                                    </span> 
+                                    : 'Generate New'
+                                }
+                            </GlassButton>
+                            {isLoading && (
+                                <p className="text-xs text-text-muted text-center mt-2">
+                                    AI is devising a multi-phase optimization strategy... Then, executing a high-speed, self-correcting genetic evolution. This may take a moment.
+                                </p>
+                            )}
+                        </div>
                     </GlassPanel>
-                )}
+
+                    <GlassPanel className="p-4">
+                        <h2 className="text-lg font-bold mb-4">Saved Versions</h2>
+                        <div className="space-y-2 max-h-96 overflow-y-auto">
+                            {selectedBatchIds.length > 0 && savedVersions.length > 0 ? savedVersions.map(v => (
+                                <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setCandidates([]); }} 
+                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-white/10 border-transparent hover:border-white/20'}`}>
+                                    <div className="flex justify-between items-center">
+                                        <p className="font-semibold text-white">Version {v.version}</p>
+                                        <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
+                                    </div>
+                                    <p className="text-xs text-text-muted mt-1">Created: {new Date(v.createdAt).toLocaleDateString()}</p>
+                                </button>
+                            )) : (
+                                <p className="text-sm text-text-muted text-center py-4">
+                                    {selectedBatchIds.length > 0 ? 'No saved versions for this combination of batches.' : 'Select batches to see saved versions.'}
+                                </p>
+                            )}
+                        </div>
+                    </GlassPanel>
+                </div>
+
+                <div className="lg:col-span-3 space-y-6">
+                    {selectedTimetable && editedTimetable ? (
+                        <>
+                            <GlassPanel className="p-4">
+                                <div className="border-b border-[var(--border)] pb-4 mb-4 flex flex-wrap justify-between items-center gap-4">
+                                    <div>
+                                         <h3 className="text-xl font-bold text-white">
+                                             {selectedTimetable.version ? `Version ${selectedTimetable.version}` : `Candidate ${selectedCandidateIndex + 1}/${candidates.length}`}
+                                         </h3>
+                                         <div className="flex items-center gap-2">
+                                            <p className="text-sm text-text-muted">Status: <span className={`font-semibold ${statusColors[selectedTimetable.status]}`}>{selectedTimetable.status}</span></p>
+                                            {isDirty && selectedTimetable.status === 'Draft' && (
+                                                <span className="px-2 py-0.5 text-xs rounded-full bg-orange-500/10 text-orange-400 font-semibold animate-pulse">Unsaved Changes</span>
+                                            )}
+                                         </div>
+                                     </div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        {selectedTimetable.version && firstBatchForExport && (
+                                             <>
+                                                {/* FIX: Pass dynamic timeSlots to export functions. */}
+                                                <GlassButton variant="secondary" icon={Download} onClick={() => exportTimetableToCsv(selectedTimetable, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>CSV</GlassButton>
+                                                <GlassButton variant="secondary" icon={Calendar} onClick={() => exportTimetableToIcs(selectedTimetable, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>ICS</GlassButton>
+                                             </>
+                                        )}
+                                        {candidates.length > 0 && !selectedVersionId && (
+                                            <div className="flex items-center gap-2">
+                                                <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.max(0, p - 1))} disabled={selectedCandidateIndex === 0}><ChevronLeft size={16}/></GlassButton>
+                                                <span className="font-mono text-sm">{selectedCandidateIndex + 1} / {candidates.length}</span>
+                                                <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.min(candidates.length - 1, p + 1))} disabled={selectedCandidateIndex === candidates.length - 1}><ChevronRight size={16}/></GlassButton>
+                                                <GlassButton icon={Save} onClick={handleSaveCandidate}>Save as Draft</GlassButton>
+                                            </div>
+                                        )}
+                                        {selectedTimetable.version && selectedTimetable.status === 'Draft' && (
+                                            <GlassButton icon={Save} onClick={handleUpdateDraft} disabled={!isDirty}>Save Changes</GlassButton>
+                                        )}
+                                    </div>
+                                </div>
+                                 <div className="space-y-8">
+                                    {editedTimetable.batchIds.map(batchId => {
+                                        const batch = batches.find(b => b.id === batchId);
+                                        if (!batch) return null;
+
+                                        const singleBatchGrid = editedTimetable.timetable[batchId] || {};
+                                        
+                                        // Create a temporary GeneratedTimetable-like object for TimetableView
+                                        const singleBatchTimetable = {
+                                            ...editedTimetable,
+                                            id: `${editedTimetable.id}_${batchId}`,
+                                            batchIds: [batchId],
+                                            timetable: singleBatchGrid, // This now expects SingleBatchTimetableGrid
+                                        };
+
+                                        return (
+                                            <div key={batchId}>
+                                                <h4 className="text-lg font-bold text-white mb-2">{batch.name}</h4>
+                                                <TimetableView
+                                                    timetableData={singleBatchTimetable}
+                                                    isEditable={editedTimetable.status === 'Draft'}
+                                                    onDropAssignment={handleDropAssignment}
+                                                    conflictMap={conflictMap}
+                                                />
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </GlassPanel>
+                            
+                            {selectedVersionId && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <GlassPanel className="p-4">
+                                        <h3 className="text-lg font-bold mb-4">Actions</h3>
+                                        <div className="space-y-2">
+                                            {canSubmit && (
+                                                <GlassButton 
+                                                    onClick={() => handleUpdateStatus('Submitted')} 
+                                                    disabled={selectedTimetable.status !== 'Draft' || isDirty} 
+                                                    className="w-full"
+                                                    title={isDirty ? "Please save your changes before submitting." : "Submit for final review"}
+                                                >
+                                                    Submit for Review
+                                                </GlassButton>
+                                            )}
+                                            {canApprove && (
+                                                <div className="flex gap-2">
+                                                    <GlassButton onClick={() => handleUpdateStatus('Approved')} disabled={selectedTimetable.status !== 'Submitted'} icon={Check} className="w-full">Approve</GlassButton>
+                                                    <GlassButton onClick={() => handleUpdateStatus('Rejected')} disabled={selectedTimetable.status !== 'Submitted'} icon={X} variant="secondary" className="w-full hover:bg-red-500/20 hover:text-red-400">Reject</GlassButton>
+                                                </div>
+                                            )}
+                                            {!canSubmit && <p className="text-sm text-text-muted text-center py-2">You do not have permission to perform actions.</p>}
+                                        </div>
+                                    </GlassPanel>
+                                    <GlassPanel className="p-4 flex flex-col">
+                                        <h3 className="text-lg font-bold mb-4">Comments</h3>
+                                        <div className="space-y-3 max-h-48 overflow-y-auto mb-4 pr-2 flex-1">
+                                            {selectedTimetable.comments?.length > 0 ? selectedTimetable.comments.map((c, i) => (
+                                                <div key={i}>
+                                                    <p className="font-semibold text-white text-sm">{c.userName}</p>
+                                                    <p className="text-text-muted text-sm">{c.text}</p>
+                                                </div>
+                                            )) : <p className="text-sm text-text-muted">No comments yet.</p>}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input value={comment} onChange={e => setComment(e.target.value)} placeholder="Add a comment..." className="glass-input flex-1"/>
+                                            <GlassButton icon={Send} onClick={handleAddComment} disabled={!comment.trim()} />
+                                        </div>
+                                    </GlassPanel>
+                                </div>
+                            )}
+                        </>
+                    ) : (
+                        <GlassPanel className="p-6 text-center h-96 flex flex-col items-center justify-center">
+                            <Zap size={48} className="text-text-muted mb-4"/>
+                            <h3 className="text-xl font-bold text-white">No Timetable Selected</h3>
+                            <p className="text-text-muted mt-2">Generate new candidates or select a saved version.</p>
+                        </GlassPanel>
+                    )}
+                </div>
             </div>
-        </div>
+            <BatchSelectorModal
+                isOpen={isBatchModalOpen}
+                onClose={() => setIsBatchModalOpen(false)}
+                onConfirm={handleConfirmBatchSelection}
+                groupedOptions={batchOptions}
+                initialSelected={selectedBatchIds}
+            />
+        </>
     );
 };
 

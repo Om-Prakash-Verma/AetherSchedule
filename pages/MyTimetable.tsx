@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { TimetableView } from '../components/TimetableView';
 import { useAppContext } from '../hooks/useAppContext';
@@ -28,7 +28,7 @@ const TimetableFeedbackComponent: React.FC<{ timetable: GeneratedTimetable }> = 
                 rating,
             };
             // This needs a new API endpoint, let's assume one exists for now.
-            // await api.saveTimetableFeedback(feedbackData);
+            await api.saveTimetableFeedback(feedbackData);
             await refreshData();
             toast.success('Thank you for your feedback!');
         } catch(e: any) {
@@ -65,7 +65,17 @@ const TimetableFeedbackComponent: React.FC<{ timetable: GeneratedTimetable }> = 
 
 
 const MyTimetable: React.FC = () => {
-    const { user, generatedTimetables, batches, faculty } = useAppContext();
+    const { 
+        user, generatedTimetables, batches, faculty, 
+        fetchTimetables, fetchBatches, fetchFaculty 
+    } = useAppContext();
+
+    useEffect(() => {
+        fetchTimetables();
+        fetchBatches();
+        fetchFaculty();
+    }, [fetchTimetables, fetchBatches, fetchFaculty]);
+
 
     let userDisplayTimetable: any | null = null;
     let title = "My Timetable";

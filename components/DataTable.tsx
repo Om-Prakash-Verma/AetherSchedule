@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Loader2 } from 'lucide-react';
 import { GlassButton } from './GlassButton';
 
 interface DataTableProps<T extends { id: string }> {
@@ -11,9 +11,18 @@ interface DataTableProps<T extends { id: string }> {
   data: T[];
   onEdit?: (item: T) => void;
   onDelete?: (item: T) => void;
+  isLoading?: boolean;
 }
 
-export function DataTable<T extends { id: string }>({ columns, data, onEdit, onDelete }: DataTableProps<T>) {
+function DataTableInner<T extends { id: string }>({ columns, data, onEdit, onDelete, isLoading }: DataTableProps<T>) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-10 text-text-muted">
+        <Loader2 className="animate-spin mr-2" /> Loading data...
+      </div>
+    );
+  }
+
   if (!data || data.length === 0) {
     return <div className="text-center py-10 text-text-muted">No data available.</div>;
   }
@@ -50,3 +59,5 @@ export function DataTable<T extends { id: string }>({ columns, data, onEdit, onD
     </div>
   );
 }
+
+export const DataTable = React.memo(DataTableInner) as typeof DataTableInner;

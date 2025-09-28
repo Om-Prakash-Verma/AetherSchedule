@@ -1,23 +1,45 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
+import { SelectionModal } from './SelectionModal';
 
-interface GlassSelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
-  children: React.ReactNode;
+interface GlassSelectOption {
+  value: string | number;
+  label: string;
+}
+
+interface GlassSelectProps {
+  options: GlassSelectOption[];
+  value: string | number;
+  onChange: (value: string | number) => void;
+  placeholder?: string;
   className?: string;
 }
 
-export const GlassSelect: React.FC<GlassSelectProps> = ({ children, className = '', ...props }) => {
+export const GlassSelect: React.FC<GlassSelectProps> = ({ options, value, onChange, placeholder = 'Select an option', className }) => {
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const selectedOption = options.find(option => option.value === value);
+
+  const handleConfirm = (selectedValue: string | number) => {
+    onChange(selectedValue);
+    setIsModalOpen(false);
+  };
+
   return (
-    <div className={`relative w-full ${className}`}>
-      <select
-        className="glass-input w-full appearance-none pr-8"
-        {...props}
-      >
-        {children}
-      </select>
-      <ChevronDown
-        className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none"
+    <>
+      <button type="button" onClick={() => setIsModalOpen(true)} className={`glass-input w-full flex justify-between items-center text-left ${className}`}>
+        <span className="truncate pr-2">{selectedOption?.label || placeholder}</span>
+        <ChevronDown className="h-4 w-4 text-text-muted shrink-0"/>
+      </button>
+
+      <SelectionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onConfirm={handleConfirm}
+        options={options}
+        initialValue={value}
+        mode="single"
+        title={placeholder}
       />
-    </div>
+    </>
   );
 };

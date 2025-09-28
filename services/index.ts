@@ -5,7 +5,15 @@ import * as realApi from './apiService';
 // during both development and production.
 export const {
     login,
-    getAllData,
+    getSubjects,
+    getFaculty,
+    getRooms,
+    getDepartments,
+    getBatches,
+    getUsers,
+    getTimetables,
+    getConstraints,
+    getSettings,
     runScheduler,
     saveTimetable,
     updateTimetable,
@@ -28,5 +36,6 @@ export const {
     deletePlannedLeave,
     saveFacultyAvailability,
     saveGlobalConstraints,
+    saveTimetableSettings,
     resetData,
 } = realApi;

@@ -1,5 +1,6 @@
 import type { GeneratedTimetable, Subject, Faculty, Room, Batch } from '../types';
-import { DAYS_OF_WEEK, TIME_SLOTS } from '../constants';
+// FIX: Removed TIME_SLOTS import. The slots are now dynamically generated and passed as a parameter.
+import { DAYS_OF_WEEK } from '../constants';
 
 const escapeCsvCell = (cell: string) => `"${cell.replace(/"/g, '""')}"`;
 
@@ -25,7 +26,9 @@ export const exportTimetableToCsv = (
     firstBatch: Batch, 
     subjects: Subject[],
     faculty: Faculty[],
-    rooms: Room[]
+    rooms: Room[],
+    // FIX: Added timeSlots as a parameter to support dynamic slot generation.
+    timeSlots: string[]
 ) => {
     const flatGrid = flattenTimetableForExport(timetableData.timetable);
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -35,7 +38,8 @@ export const exportTimetableToCsv = (
     csvContent += headerRow + '\r\n';
 
     // Data Rows
-    TIME_SLOTS.forEach((slot, slotIndex) => {
+    // FIX: Use the passed timeSlots array instead of the old constant.
+    timeSlots.forEach((slot, slotIndex) => {
         const row = [slot];
         DAYS_OF_WEEK.forEach((_, dayIndex) => {
             const assignments = flatGrid[dayIndex]?.[slotIndex];
@@ -76,7 +80,9 @@ export const exportTimetableToIcs = (
     firstBatch: Batch, // Used for naming convention
     subjects: Subject[],
     faculty: Faculty[],
-    rooms: Room[]
+    rooms: Room[],
+    // FIX: Added timeSlots as a parameter to support dynamic slot generation.
+    timeSlots: string[]
 ) => {
     const today = new Date();
     const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
@@ -101,7 +107,8 @@ export const exportTimetableToIcs = (
         
         if (!subject || !facultyMember || !room) return;
         
-        const startHour = parseInt(TIME_SLOTS[assignment.slot].split(' ')[0].split(':')[0]);
+        // FIX: Use the passed timeSlots array to determine the start time.
+        const startHour = parseInt(timeSlots[assignment.slot].split(' ')[0].split(':')[0]);
         
         const eventDate = new Date(monday);
         eventDate.setDate(monday.getDate() + assignment.day);

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { GlassButton } from './GlassButton';
-import { X } from 'lucide-react';
 import { useAppContext } from '../hooks/useAppContext';
 import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
-import { ROLES, DAYS_OF_WEEK, TIME_SLOTS } from '../constants';
+import { ROLES, DAYS_OF_WEEK } from '../constants';
 import { useToast } from '../hooks/useToast';
+import { GlassSelect } from './ui/GlassSelect';
+import { Modal } from './ui/Modal';
 
 type DataType = 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'users' | 'pinned' | 'leaves';
 
@@ -17,20 +18,17 @@ interface DataFormModalProps {
 }
 
 export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, onSave, dataType, initialData }) => {
-  const { subjects, departments, faculty, rooms, batches, users } = useAppContext();
+  const { subjects, departments, faculty, rooms, batches, timeSlots } = useAppContext();
   const [formData, setFormData] = useState<any>({});
   const toast = useToast();
   
   useEffect(() => {
-    // When opening, if the role is not student, ensure batchId is cleared.
     const data = initialData || {};
     if (dataType === 'users' && data.role !== 'Student') {
         delete data.batchId;
     }
     setFormData(data);
   }, [initialData, isOpen, dataType]);
-
-  if (!isOpen) return null;
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
@@ -41,22 +39,31 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
     
     const newFormData = { ...formData, [name]: finalValue };
 
-    // If the role is changed to something other than Student, remove the batchId
     if (name === 'role' && value !== 'Student') {
         delete newFormData.batchId;
     }
 
     setFormData(newFormData);
   };
+
+  const handleSelectChange = (name: string, value: string | number) => {
+    handleChange({
+      target: { name, value: String(value) }
+    } as React.ChangeEvent<HTMLSelectElement>);
+  };
   
   const handleMultiSelectChange = (name: string, selected: string[]) => {
-      setFormData({ ...formData, [name]: selected });
+      if (name === 'days' || name === 'startSlots') {
+          const numericValues = selected.map(Number).sort((a,b) => a - b);
+          setFormData({ ...formData, [name]: numericValues });
+      } else {
+        setFormData({ ...formData, [name]: selected });
+      }
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validation for faculty subjects
     if (dataType === 'faculty' && (!formData.subjectIds || formData.subjectIds.length === 0)) {
         toast.error('Please assign at least one subject to the faculty member.');
         return;
@@ -82,9 +89,16 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
         <>
           <input name="code" placeholder="Code (e.g., CS301)" value={formData.code || ''} onChange={handleChange} className="glass-input" required />
           <input name="name" placeholder="Name" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
-          <select name="type" value={formData.type || ''} onChange={handleChange} className="glass-input appearance-none" required>
-            <option value="">Select Type</option> <option value="Theory">Theory</option> <option value="Practical">Practical</option> <option value="Workshop">Workshop</option>
-          </select>
+          <GlassSelect 
+            placeholder="Select Type"
+            value={formData.type || ''}
+            onChange={(value) => handleSelectChange('type', value)}
+            options={[
+              { value: 'Theory', label: 'Theory'},
+              { value: 'Practical', label: 'Practical'},
+              { value: 'Workshop', label: 'Workshop'},
+            ]}
+          />
           <input name="credits" type="number" placeholder="Credits" value={formData.credits || ''} onChange={handleChange} className="glass-input" required/>
           <input name="hoursPerWeek" type="number" placeholder="Hours/Week" value={formData.hoursPerWeek || ''} onChange={handleChange} className="glass-input" required/>
         </>
@@ -99,18 +113,28 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
       case 'rooms': return (
         <>
           <input name="name" placeholder="Name (e.g., LH-1)" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
-          <select name="type" value={formData.type || ''} onChange={handleChange} className="glass-input appearance-none" required>
-            <option value="">Select Type</option> <option value="Lecture Hall">Lecture Hall</option> <option value="Lab">Lab</option> <option value="Workshop">Workshop</option>
-          </select>
+          <GlassSelect
+            placeholder="Select Type"
+            value={formData.type || ''}
+            onChange={(value) => handleSelectChange('type', value)}
+            options={[
+              { value: 'Lecture Hall', label: 'Lecture Hall'},
+              { value: 'Lab', label: 'Lab'},
+              { value: 'Workshop', label: 'Workshop'},
+            ]}
+          />
           <input name="capacity" type="number" placeholder="Capacity" value={formData.capacity || ''} onChange={handleChange} className="glass-input" required/>
         </>
       );
       case 'batches': return (
         <>
           <input name="name" placeholder="Name (e.g., CS S5 A)" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
-          <select name="departmentId" value={formData.departmentId || ''} onChange={handleChange} className="glass-input appearance-none" required>
-            <option value="">Select Department</option> {departmentOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-          </select>
+          <GlassSelect
+            placeholder="Select Department"
+            value={formData.departmentId || ''}
+            onChange={(value) => handleSelectChange('departmentId', value)}
+            options={departmentOptions}
+          />
           <input name="semester" type="number" placeholder="Semester" value={formData.semester || ''} onChange={handleChange} className="glass-input" required/>
           <input name="studentCount" type="number" placeholder="Student Count" value={formData.studentCount || ''} onChange={handleChange} className="glass-input" required/>
           <MultiSelectDropdown label="Subjects" options={subjectOptions} selected={formData.subjectIds || []} onChange={(s) => handleMultiSelectChange('subjectIds', s)} />
@@ -128,35 +152,37 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
           <>
             <input name="name" placeholder="Full Name" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
             <input name="email" type="email" placeholder="Email Address" value={formData.email || ''} onChange={handleChange} className="glass-input" required />
-            <select name="role" value={formData.role || ''} onChange={handleChange} className="glass-input appearance-none" required>
-                <option value="">Select Role</option>
-                {ROLES.map(role => <option key={role} value={role}>{role}</option>)}
-            </select>
+            <GlassSelect
+              placeholder="Select Role"
+              value={formData.role || ''}
+              onChange={(value) => handleSelectChange('role', value)}
+              options={ROLES.map(role => ({ value: role, label: role }))}
+            />
             {formData.role === 'Student' && (
-                <select name="batchId" value={formData.batchId || ''} onChange={handleChange} className="glass-input appearance-none" required>
-                    <option value="">Select Batch</option>
-                    {batches.map(batch => (
-                        <option key={batch.id} value={batch.id}>{batch.name}</option>
-                    ))}
-                </select>
+                <GlassSelect
+                  placeholder="Select Batch"
+                  value={formData.batchId || ''}
+                  onChange={(value) => handleSelectChange('batchId', value)}
+                  options={batches.map(batch => ({ value: batch.id, label: batch.name }))}
+                />
             )}
           </>
       );
       case 'pinned': return (
           <>
              <input name="name" placeholder="Event Name (e.g., Placement Talk)" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
-             <select name="batchId" value={formData.batchId || ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Batch</option>{batchOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-             <select name="subjectId" value={formData.subjectId || ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Subject</option>{subjectOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-             <select name="facultyId" value={formData.facultyId || ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Faculty</option>{facultyOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-             <select name="roomId" value={formData.roomId || ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Room</option>{roomOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
-             <select name="day" value={formData.day ?? ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Day</option>{DAYS_OF_WEEK.map((d,i)=><option key={i} value={i}>{d}</option>)}</select>
-             <select name="startSlot" value={formData.startSlot ?? ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Start Time</option>{TIME_SLOTS.map((t,i)=><option key={i} value={i}>{t}</option>)}</select>
+             <GlassSelect placeholder="Select Batch" value={formData.batchId || ''} onChange={(v) => handleSelectChange('batchId', v)} options={batchOptions} />
+             <GlassSelect placeholder="Select Subject" value={formData.subjectId || ''} onChange={(v) => handleSelectChange('subjectId', v)} options={subjectOptions} />
+             <GlassSelect placeholder="Select Faculty" value={formData.facultyId || ''} onChange={(v) => handleSelectChange('facultyId', v)} options={facultyOptions} />
+             <GlassSelect placeholder="Select Room" value={formData.roomId || ''} onChange={(v) => handleSelectChange('roomId', v)} options={roomOptions} />
+             <MultiSelectDropdown label="Select Day(s)" options={DAYS_OF_WEEK.map((d,i)=>({value: String(i), label: d}))} selected={formData.days?.map(String) || []} onChange={(s) => handleMultiSelectChange('days', s)} />
+             <MultiSelectDropdown label="Select Start Time(s)" options={timeSlots.map((t,i)=>({value: String(i), label: t}))} selected={formData.startSlots?.map(String) || []} onChange={(s) => handleMultiSelectChange('startSlots', s)} />
              <input name="duration" type="number" placeholder="Duration (in slots)" value={formData.duration || ''} onChange={handleChange} className="glass-input" required/>
           </>
       );
       case 'leaves': return (
           <>
-             <select name="facultyId" value={formData.facultyId || ''} onChange={handleChange} className="glass-input appearance-none" required><option value="">Select Faculty</option>{facultyOptions.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}</select>
+             <GlassSelect placeholder="Select Faculty" value={formData.facultyId || ''} onChange={(v) => handleSelectChange('facultyId', v)} options={facultyOptions} />
              <input name="startDate" type="date" placeholder="Start Date" value={formData.startDate || ''} onChange={handleChange} className="glass-input" required />
              <input name="endDate" type="date" placeholder="End Date" value={formData.endDate || ''} onChange={handleChange} className="glass-input" required />
              <input name="reason" placeholder="Reason for leave" value={formData.reason || ''} onChange={handleChange} className="glass-input" required />
@@ -172,21 +198,23 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
       return `${action} ${typeName}`;
   }
 
+  const footer = (
+    <>
+      <GlassButton type="button" variant="secondary" onClick={onClose}>Cancel</GlassButton>
+      <GlassButton type="submit" form="data-form">Save</GlassButton>
+    </>
+  );
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-panel/95 backdrop-blur-xl border border-[var(--border)] rounded-xl shadow-lg w-full max-w-md m-4 animate-in fade-in-0 zoom-in-95 max-h-[90vh] flex flex-col">
-        <div className="p-6 border-b border-[var(--border)] flex justify-between items-center shrink-0">
-          <h2 className="text-xl font-bold text-white">{getTitle()}</h2>
-          <button onClick={onClose} className="text-text-muted hover:text-white"><X size={20} /></button>
-        </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={getTitle()}
+      footer={footer}
+    >
+        <form id="data-form" onSubmit={handleSubmit} className="space-y-4">
           {renderFields()}
-          <div className="flex justify-end gap-4 pt-4 sticky bottom-0 bg-panel/95 -mx-6 px-6 pb-6 -mb-6">
-            <GlassButton type="button" variant="secondary" onClick={onClose}>Cancel</GlassButton>
-            <GlassButton type="submit">Save</GlassButton>
-          </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 };

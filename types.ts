@@ -121,8 +121,8 @@ export interface PinnedAssignment {
   facultyId: string;
   roomId: string;
   batchId: string;
-  day: number;
-  startSlot: number;
+  days: number[];
+  startSlots: number[];
   duration: number; // in slots
 }
 
@@ -158,6 +158,15 @@ export interface GlobalConstraints {
     aiFacultyWorkloadDistributionWeight: number;
     aiFacultyPreferenceWeight: number;
 }
+
+export interface TimetableSettings {
+    id: number;
+    collegeStartTime: string; // "HH:mm"
+    collegeEndTime: string; // "HH:mm"
+    periodDuration: number; // in minutes
+    breaks: { name: string; startTime: string; endTime: string }[];
+}
+
 
 export interface Conflict {
     type: 'Faculty' | 'Room';
