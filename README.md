@@ -10,40 +10,41 @@ This application provides a full-stack solution, from a cohesive black glassmorp
 
 AetherSchedule is a complete ecosystem designed to address the entire scheduling lifecycle.
 
-### 🧠 Core Intelligence Engine
-- **Hyper-Heuristic Genetic Algorithm:** The core evolutionary engine intelligently breeds, mutates, and evolves millions of potential timetables to find the fittest solutions.
-- **Three-Level Gemini Integration:** Goes beyond simple AI. Gemini acts as a self-tuning judge, a master strategist for the algorithm, and a creative problem-solver to break through optimization deadlocks.
-- **Multi-Candidate Generation:** Produces several distinct, high-quality timetable candidates, each with a detailed scorecard, giving administrators the power of choice.
+### 🧠 Core Intelligence & Scheduling Engine
+- **Hyper-Heuristic Genetic Algorithm:** The core evolutionary engine intelligently breeds, mutates, and evolves millions of potential timetables to find the fittest solutions, solving a problem that is computationally impossible for humans.
+- **Three-Level Gemini Integration:** Goes beyond simple AI. Gemini acts as a self-tuning judge (learning from faculty feedback), a master strategist (devising a custom plan for the algorithm), and a creative problem-solver (intervening to break optimization deadlocks).
+- **Multi-Candidate Generation:** Produces several distinct, high-quality timetable candidates, each with a detailed scorecard, empowering administrators with the power of informed choice.
 - **Conflict-Free by Design:** Hard constraints are the bedrock of the engine. All generated solutions are guaranteed to be free of faculty, room, and batch clashes.
-- **Sophisticated Fitness Scoring:** Every candidate is meticulously scored against soft constraints like minimizing student/faculty gaps, balancing workloads, and respecting preferences.
 
 ### ⚙️ Comprehensive Scheduling & Control
 - **Multi-Batch Master Scheduling:** Generate complex master timetables that seamlessly coordinate schedules across multiple batches, semesters, and entire departments.
 - **Interactive Visual Editor:** Manually refine AI-generated drafts with an intuitive drag-and-drop interface, giving you the perfect blend of automation and human control.
-- **Real-Time Conflict Highlighting:** The visual editor instantly flags any manual change that creates a faculty or room conflict, preventing errors before they happen.
+- **Real-Time Conflict Highlighting:** The visual editor instantly flags any manual change that creates a faculty or room conflict with a detailed tooltip, preventing errors before they happen.
 - **Full Version Control:** Save multiple drafts for any timetable, allowing for easy comparison, iteration, and rollback to previous versions.
-- **Collaborative Approval Workflow:** A multi-step process (Draft → Submitted → Approved/Rejected) with role-based permissions ensures schedules are properly vetted by all stakeholders.
+- **Collaborative Approval Workflow:** A multi-step process (`Draft` → `Submitted` → `Approved`/`Rejected`) with role-based permissions ensures schedules are properly vetted by all stakeholders.
 - **Integrated Commenting System:** Department heads and managers can leave timestamped comments directly on timetable drafts, centralizing all feedback in one place.
 
+### 🧑‍🏫 Intelligent Substitute Management
+- **AI-Powered Recommendations:** Instantly finds and ranks the best-suited substitute teachers for a last-minute absence. The ranking considers not just availability but also real-time workload, schedule compactness, and subject expertise.
+- **Context-Aware Candidate Pooling:** The pool of potential substitutes is intelligently restricted to teachers already allocated to that specific batch, ensuring substitutes are familiar with the student group and curriculum.
+
 ### 🔒 Granular Constraint Management
-- **Faculty Availability Matrix:** Easily define preferred and unavailable time slots for each faculty member using a simple, visual point-and-click matrix.
-- **Pinned Assignments:** Lock in mandatory, one-off events like guest lectures at a fixed time, forcing the AI to schedule everything else around them.
-- **Planned Leave Management:** Formally block out dates for faculty conferences or holidays to ensure the AI doesn't schedule them when they are unavailable.
-- **Global Weight Tuning:** Administrators can set the base importance of different soft constraints, telling the AI what the institution values most.
+- **Faculty Availability Matrix:** A simple, visual point-and-click matrix to define preferred and unavailable time slots for each faculty member.
+- **Pinned Assignments & Planned Leaves:** Lock in mandatory, non-negotiable events or block out dates for faculty holidays to ensure the AI respects all real-world constraints.
+- **Batch-Specific Room Allocations:** Restrict a batch's classes to a specific set of pre-assigned rooms, giving administrators fine-grained control over resource usage.
+- **Multi-Teacher Lab Assignments:** Accurately models real-world scenarios by allowing the assignment of two or more teachers to a single lab or practical session. The AI will ensure all assigned teachers are available simultaneously.
 
 ### 🗂️ Centralized Data & User Administration
 - **Unified Data Hub:** A single source of truth for all institutional data: Subjects, Faculty, Rooms, Batches, and Departments, with full CRUD functionality.
-- **Data Portability:** Full import and export of all foundational data (subjects, faculty, rooms, batches, **and users**) via JSON, allowing for easy backups, migrations, or offline editing.
+- **Data Portability:** Full import and export of all foundational data (including users) via JSON, allowing for easy backups, migrations, or offline editing.
 - **Role-Based Access Control (RBAC):** A robust permission system ensures users only see and interact with the features relevant to their role (Admin, Manager, HOD, Faculty, Student).
-- **Full User Management:** Admins can create, edit, and delete user accounts and assign specific roles.
 - **System Reset Functionality:** A secure 'danger zone' feature for SuperAdmins to reset the application database to its initial seed state.
 
 ### 📊 User Experience & Reporting
-- **Personalized Timetable Views:** Students and faculty log in to see a clean, personalized view of only their own approved schedule.
+- **Personalized Timetable Views:** Students and faculty log in to see a clean, personalized view of only their own approved schedule, updated in real-time with any substitutions.
 - **Faculty Feedback Loop:** Faculty can rate their schedules, providing crucial data that the Gemini AI uses to self-tune and improve future results.
 - **Versatile Export Options:** Export approved timetables to CSV for spreadsheets or ICS for one-click import into calendar applications.
 - **Insightful Reports:** Access detailed reports on key metrics like room utilization and faculty workload to make data-driven administrative decisions.
-- **Responsive & Modern UI:** A beautiful and cohesive glassmorphism design system that provides an intuitive experience on both desktop and mobile devices.
 
 ---
 
