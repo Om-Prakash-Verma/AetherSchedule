@@ -7,9 +7,9 @@ import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
 import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid, Substitution } from '../types';
-import { Zap, Save, ChevronLeft, ChevronRight, Download, Calendar, Send, Check, X, Loader2, ChevronDown } from 'lucide-react';
+import { Zap, Save, ChevronLeft, ChevronRight, Printer, Calendar, Send, Check, X, Loader2, ChevronDown } from 'lucide-react';
 import { TimetableView } from '../components/TimetableView';
-import { exportTimetableToCsv, exportTimetableToIcs } from '../utils/export';
+import { exportTimetableToPdf, exportTimetableToIcs } from '../utils/export';
 import { checkConflicts } from '../core/conflictChecker';
 
 const statusColors: Record<GeneratedTimetable['status'], string> = {
@@ -379,8 +379,7 @@ const Scheduler: React.FC = () => {
                                     <div className="flex items-center gap-2 flex-wrap">
                                         {selectedTimetable.version && firstBatchForExport && (
                                              <>
-                                                {/* FIX: Pass dynamic timeSlots to export functions. */}
-                                                <GlassButton variant="secondary" icon={Download} onClick={() => exportTimetableToCsv(selectedTimetable, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>CSV</GlassButton>
+                                                <GlassButton variant="secondary" icon={Printer} onClick={() => exportTimetableToPdf(selectedTimetable, subjects, faculty, rooms, timeSlots, batches)}>PDF</GlassButton>
                                                 <GlassButton variant="secondary" icon={Calendar} onClick={() => exportTimetableToIcs(selectedTimetable, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>ICS</GlassButton>
                                              </>
                                         )}
