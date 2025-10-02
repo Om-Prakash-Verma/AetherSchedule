@@ -66,21 +66,21 @@ const diffTimetables = (oldGrid: TimetableGrid, newGrid: TimetableGrid, subjects
 
 
 const CONSOLE_MESSAGES = [
-    "[INIT] Initializing scheduling engine...",
-    "[CONFIG] Loading institutional constraints and settings...",
-    "[GEMINI_QUERY] Requesting dynamic hyper-heuristic strategy from Gemini API...",
-    "[STRATEGY] Received multi-phase evolutionary strategy. Applying to current run.",
-    "[POP_GEN] Generating initial population of timetable chromosomes...",
-    "[FITNESS_CALC] Evaluating fitness of initial population against soft constraints...",
-    "[EVOLUTION] Beginning evolutionary cycle: Selection, Crossover, Mutation.",
-    "[CROSSOVER] Applying day-wise crossover to promising parent solutions.",
-    "[MUTATION] Executing swap and move mutations to explore solution space.",
-    "[STAGNATION_DETECT] Monitoring fitness score for local optima stagnation.",
-    "[INTERVENTION] Stagnation detected. Querying Gemini for a creative intervention swap.",
-    "[REPAIR] Applying greedy repair heuristic to ensure hard constraint validity.",
-    "[REFINEMENT] Executing simulated annealing for fine-grained optimization.",
-    "[ANALYSIS] Performing final validation on elite candidates...",
-    "[SYNTHESIS] Synthesizing and ranking top 5 distinct timetable solutions...",
+    "Waking up the AI scheduling engine...",
+    "Reading all your rules and requirements...",
+    "Asking the AI for the smartest way to solve this...",
+    "AI has a plan! Starting the scheduling process...",
+    "Creating hundreds of rough draft timetables to start...",
+    "Checking how good the first drafts are...",
+    "Evolving the best drafts to make them even better...",
+    "Mixing and matching the best parts of good schedules...",
+    "Making small, smart changes to find improvements...",
+    "Checking if we're stuck on a 'good enough' solution...",
+    "Thinking outside the box... Asking AI for a creative idea.",
+    "Double-checking to make sure no rules are broken...",
+    "Polishing the best options for the final touches...",
+    "Reviewing the top timetable candidates...",
+    "Preparing your top 5 timetable options.",
 ];
 
 const Scheduler: React.FC = () => {
@@ -257,7 +257,7 @@ const Scheduler: React.FC = () => {
         setViewedCandidate(null);
         
         setIsConsoleVisible(true);
-        setConsoleMessages(["[SYS] Initiating AI timetable generation sequence..."]);
+        setConsoleMessages(["[SYSTEM] Starting the AI timetable generator..."]);
 
         let messageIndex = 0;
         messageIntervalRef.current = window.setInterval(() => {
@@ -271,14 +271,14 @@ const Scheduler: React.FC = () => {
             setViewedCandidate(results[0] || null);
             if (results.length > 0) {
                 toast.success(`Generated ${results.length} new candidates.`);
-                setConsoleMessages(prev => [...prev, `[SUCCESS] ${results.length} optimal candidates generated. Process complete.`]);
+                setConsoleMessages(prev => [...prev, `[SUCCESS] All done! Here are your ${results.length} best options.`]);
             } else {
                 toast.info('No valid timetables could be generated.');
-                setConsoleMessages(prev => [...prev, `[WARN] AI could not find a valid solution. Suggest adjusting constraints or input data.`]);
+                setConsoleMessages(prev => [...prev, `[PROBLEM] The AI couldn't find a solution. Your rules might be too strict. Try removing a constraint.`]);
             }
         } catch (error: any) {
             toast.error(error.message || 'Error during generation.');
-            setConsoleMessages(prev => [...prev, `[ERROR] System fault: ${error.message}. Please review system logs.`]);
+            setConsoleMessages(prev => [...prev, `[ERROR] An unexpected problem occurred: ${error.message}. Please try again.`]);
         } finally {
             setIsLoading(false);
             if (messageIntervalRef.current) {

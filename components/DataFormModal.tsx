@@ -8,6 +8,7 @@ import { Modal } from './ui/Modal';
 import type { Subject, User } from '../types';
 import { useQuery } from '@tanstack/react-query';
 import * as api from '../services';
+import { generateTimeSlots } from '../utils/time';
 
 type DataType = 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'users' | 'pinned' | 'leaves';
 
@@ -28,7 +29,11 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: api.getUsers });
   const { data: facultyAllocations = [] } = useQuery({ queryKey: ['facultyAllocations'], queryFn: api.getFacultyAllocations });
   const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-  const timeSlots = settings?.timetableSettings ? [] : []; // Simplified for now
+  
+  // FIX: Correctly generate time slots from settings for the pinned assignment form.
+  const timeSlots = useMemo(() => 
+    settings?.timetableSettings ? generateTimeSlots(settings.timetableSettings) : [], 
+  [settings]);
 
   const [formData, setFormData] = useState<any>({});
   const toast = useToast();

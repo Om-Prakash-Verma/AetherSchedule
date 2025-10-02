@@ -1,3 +1,4 @@
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { db } from '../db';
@@ -128,7 +129,7 @@ const createCrudEndpoints = <T extends { id: string }>(
         const item = await c.req.json();
         // Drizzle's onConflictDoUpdate needs a unique constraint to work, so we do a manual upsert.
         // @ts-ignore
-        const existing = await db.query[table.name].findFirst({ where: eq(table.id, item.id) });
+        const existing = await (db.query as any)[path].findFirst({ where: eq(table.id, item.id) });
         if (existing) {
              // @ts-ignore
             const [updatedItem] = await db.update(table).set(item).where(eq(table.id, item.id)).returning();
@@ -157,42 +158,39 @@ createCrudEndpoints('departments', schema.departments);
 app.post('/batches', async (c) => {
     const { allocations, ...batchData }: Batch & { allocations?: Record<string, string[]> } = await c.req.json();
     
-    await db.transaction(async (tx) => {
-        // Upsert batch
-        const existing = await tx.query.batches.findFirst({ where: eq(schema.batches.id, batchData.id) });
-        if (existing) {
-            await tx.update(schema.batches).set(batchData).where(eq(schema.batches.id, batchData.id));
-        } else {
-            await tx.insert(schema.batches).values(batchData);
-        }
+    // Upsert batch
+    const existing = await db.query.batches.findFirst({ where: eq(schema.batches.id, batchData.id) });
+    if (existing) {
+        await db.update(schema.batches).set(batchData).where(eq(schema.batches.id, batchData.id));
+    } else {
+        await db.insert(schema.batches).values(batchData);
+    }
 
-        // Update faculty allocations for this batch
-        if (allocations) {
-            // Delete old allocations for this batch
-            await tx.delete(schema.facultyAllocations).where(eq(schema.facultyAllocations.batchId, batchData.id));
-            
-            // Insert new ones
-            const newAllocations = Object.entries(allocations).map(([subjectId, facultyIds]) => ({
-                id: `fa_${batchData.id}_${subjectId}`,
-                batchId: batchData.id,
-                subjectId,
-                facultyIds: Array.isArray(facultyIds) ? facultyIds : [facultyIds],
-            })).filter(a => a.facultyIds.length > 0 && a.facultyIds[0] !== '');
+    // Update faculty allocations for this batch
+    if (allocations) {
+        // Delete old allocations for this batch
+        await db.delete(schema.facultyAllocations).where(eq(schema.facultyAllocations.batchId, batchData.id));
+        
+        // Insert new ones
+        const newAllocations = Object.entries(allocations).map(([subjectId, facultyIds]) => ({
+            id: `fa_${batchData.id}_${subjectId}`,
+            batchId: batchData.id,
+            subjectId,
+            facultyIds: Array.isArray(facultyIds) ? facultyIds : [facultyIds],
+        })).filter(a => a.facultyIds.length > 0 && a.facultyIds[0] !== '');
 
-            if (newAllocations.length > 0) {
-                await tx.insert(schema.facultyAllocations).values(newAllocations);
-            }
+        if (newAllocations.length > 0) {
+            await db.insert(schema.facultyAllocations).values(newAllocations);
         }
-    });
+    }
 
     return c.json(batchData);
 });
 app.delete('/batches/:id', async (c) => {
     const { id } = c.req.param();
-    await db.transaction(async (tx) => {
-        await tx.delete(schema.facultyAllocations).where(eq(schema.facultyAllocations.batchId, id));
-        await tx.delete(schema.batches).where(eq(schema.batches.id, id));
-    });
+    // Delete dependent faculty allocations first, then the batch.
+    await db.delete(schema.facultyAllocations).where(eq(schema.facultyAllocations.batchId, id));
+    await db.delete(schema.batches).where(eq(schema.batches.id, id));
     return c.json({ success: true });
 });
 
@@ -201,28 +199,28 @@ app.delete('/batches/:id', async (c) => {
 app.post('/timetables', async (c) => {
     const timetable: GeneratedTimetable = await c.req.json();
     
-    await db.transaction(async (tx) => {
-        if (timetable.status === 'Approved') {
-            const conflictingBatchIds = timetable.batchIds;
-            const existingApproved = await tx.query.timetables.findMany({
-                where: eq(schema.timetables.status, 'Approved')
-            });
+    // If a timetable is approved, archive any other approved timetables for the same batches.
+    if (timetable.status === 'Approved') {
+        const conflictingBatchIds = timetable.batchIds;
+        const existingApproved = await db.query.timetables.findMany({
+            where: eq(schema.timetables.status, 'Approved')
+        });
 
-            const toArchive = existingApproved.filter(tt => tt.batchIds.some(bId => conflictingBatchIds.includes(bId)));
-            if (toArchive.length > 0) {
-                await tx.update(schema.timetables)
-                    .set({ status: 'Archived' })
-                    .where(inArray(schema.timetables.id, toArchive.map(t => t.id)));
-            }
+        const toArchive = existingApproved.filter(tt => tt.batchIds.some(bId => conflictingBatchIds.includes(bId)));
+        if (toArchive.length > 0) {
+            await db.update(schema.timetables)
+                .set({ status: 'Archived' })
+                .where(inArray(schema.timetables.id, toArchive.map(t => t.id)));
         }
-        
-        const existing = await tx.query.timetables.findFirst({ where: eq(schema.timetables.id, timetable.id) });
-        if (existing) {
-            await tx.update(schema.timetables).set(timetable).where(eq(schema.timetables.id, timetable.id));
-        } else {
-            await tx.insert(schema.timetables).values(timetable);
-        }
-    });
+    }
+    
+    // Upsert the timetable.
+    const existing = await db.query.timetables.findFirst({ where: eq(schema.timetables.id, timetable.id) });
+    if (existing) {
+        await db.update(schema.timetables).set(timetable).where(eq(schema.timetables.id, timetable.id));
+    } else {
+        await db.insert(schema.timetables).values(timetable);
+    }
 
     return c.json(timetable);
 });
@@ -448,16 +446,14 @@ app.get('/analytics/report/:id', async (c) => {
 // System
 app.post('/reset-db', async (c) => {
     console.log('[db:reset] Resetting database...');
-    await db.transaction(async (tx) => {
-        // Correctly get table names from schema for dropping
-        for (const table of Object.values(schema).reverse()) {
+    // Drop tables sequentially without a transaction
+    for (const table of Object.values(schema).reverse()) {
+         // @ts-ignore
+         if(table && table.dbName) {
              // @ts-ignore
-             if(table && table.dbName) {
-                 // @ts-ignore
-                await tx.execute(sql.raw(`DROP TABLE IF EXISTS "${table.dbName}" CASCADE;`));
-             }
-        }
-    });
+            await db.execute(sql.raw(`DROP TABLE IF EXISTS "${table.dbName}" CASCADE;`));
+         }
+    }
 
     return c.json({ success: true, message: "Database reset. Please restart the dev server to re-seed." });
 });
@@ -471,23 +467,28 @@ app.post('/data/import', async (c) => {
         return c.json({ message: "Import failed: Missing one or more required data types." }, 400);
     }
     
-    await db.transaction(async (tx) => {
-        // Clear existing data management tables
-        await tx.delete(schema.facultyAllocations);
-        await tx.delete(schema.users).where(inArray(schema.users.role, ['Faculty', 'Student']));
-        await tx.delete(schema.batches);
-        await tx.delete(schema.faculty);
-        await tx.delete(schema.subjects);
-        await tx.delete(schema.rooms);
-        await tx.delete(schema.departments);
-        
-        // Insert new data
-        if(data.departments.length > 0) await tx.insert(schema.departments).values(data.departments);
-        if(data.subjects.length > 0) await tx.insert(schema.subjects).values(data.subjects);
-        if(data.faculty.length > 0) await tx.insert(schema.faculty).values(data.faculty);
-        if(data.rooms.length > 0) await tx.insert(schema.rooms).values(data.rooms);
-        if(data.batches.length > 0) await tx.insert(schema.batches).values(data.batches);
-    });
+    // Perform operations sequentially without a transaction
+    // FIX: Corrected deletion logic to respect foreign key constraints
+    
+    // 1. Break the circular dependency between users and faculty by nullifying links
+    await db.update(schema.users).set({ facultyId: null }).where(inArray(schema.users.role, ['Faculty']));
+    await db.update(schema.faculty).set({ userId: null });
+
+    // 2. Delete data in an order that respects foreign key constraints
+    await db.delete(schema.facultyAllocations);
+    await db.delete(schema.users).where(inArray(schema.users.role, ['Faculty', 'Student']));
+    await db.delete(schema.batches);
+    await db.delete(schema.faculty);
+    await db.delete(schema.subjects);
+    await db.delete(schema.rooms);
+    await db.delete(schema.departments);
+    
+    // 3. Insert new data
+    if(data.departments.length > 0) await db.insert(schema.departments).values(data.departments);
+    if(data.subjects.length > 0) await db.insert(schema.subjects).values(data.subjects);
+    if(data.faculty.length > 0) await db.insert(schema.faculty).values(data.faculty);
+    if(data.rooms.length > 0) await db.insert(schema.rooms).values(data.rooms);
+    if(data.batches.length > 0) await db.insert(schema.batches).values(data.batches);
 
     return c.json({ success: true, message: "Data imported successfully." });
 });
