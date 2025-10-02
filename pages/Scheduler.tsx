@@ -298,7 +298,6 @@ const Scheduler: React.FC = () => {
             version: newVersion,
             status: 'Draft',
             comments: [],
-            // FIX: Changed to a Date object to match the type definition.
             createdAt: new Date(),
         };
 
@@ -498,7 +497,7 @@ const Scheduler: React.FC = () => {
                             </div>
                             <div className="space-y-2 max-h-96 overflow-y-auto">
                                {candidates.map((cand, i) => (
-                                   <div key={cand.id} className={cn('p-3 rounded-lg border transition-colors', viewedCandidate?.id === cand.id ? 'bg-accent/20 border-accent/30' : 'bg-panel/50 border-transparent')}>
+                                   <div key={cand.id} className={cn('p-3 rounded-lg border transition-colors', viewedCandidate?.id === cand.id ? 'bg-accent/20 border-accent/30' : 'bg-panel/50 border-transparent hover:border-accent/30 hover:bg-accent/10')}>
                                         <div className="flex items-start gap-3">
                                             <input 
                                                 type="checkbox"
@@ -531,7 +530,7 @@ const Scheduler: React.FC = () => {
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                             {selectedBatchIds.length > 0 && savedVersions.length > 0 ? savedVersions.map(v => (
                                 <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setViewedCandidate(null); }} 
-                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-panel-strong border-transparent hover:border-[var(--border)]'}`}>
+                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-panel-strong border-transparent hover:border-[var(--border)] hover:bg-panel'}`}>
                                     <div className="flex justify-between items-center">
                                         <p className="font-semibold text-white">Version {v.version}</p>
                                         <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
@@ -668,12 +667,13 @@ const Scheduler: React.FC = () => {
                 groupedOptions={batchOptions}
                 initialSelected={selectedBatchIds}
             />
-            {substituteTarget && (
+            {substituteTarget && editedTimetable && (
                  <SubstituteModal
                     isOpen={isSubstituteModalOpen}
                     onClose={() => setIsSubstituteModalOpen(false)}
                     onConfirm={handleCreateSubstitution}
                     targetAssignment={substituteTarget}
+                    currentTimetableGrid={editedTimetable.timetable}
                 />
             )}
             <AIEngineConsole 

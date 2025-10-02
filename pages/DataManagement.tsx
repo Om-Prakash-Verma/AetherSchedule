@@ -1,9 +1,10 @@
 
 
+
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
-import { PlusCircle, AlertTriangle, FileDown, FileUp, Users as UsersIcon } from 'lucide-react';
+import { PlusCircle, AlertTriangle, FileDown, FileUp, Users as UsersIcon, Info } from 'lucide-react';
 import { DataTable } from '../components/DataTable';
 import { DataFormModal } from '../components/DataFormModal';
 import * as api from '../services';
@@ -59,6 +60,9 @@ const DataManagement: React.FC = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: [activeTab] });
             // Invalidate related queries for relational data
+            if (activeTab === 'faculty' || activeTab === 'batches' || activeTab === 'departments') {
+                queryClient.invalidateQueries({ queryKey: ['users'] });
+            }
             if (activeTab === 'users') queryClient.invalidateQueries({ queryKey: ['faculty'] });
             if (activeTab === 'batches') queryClient.invalidateQueries({ queryKey: ['facultyAllocations'] });
             toast.success(`${TABS.find(t => t.id === activeTab)?.label} saved successfully.`);
@@ -75,6 +79,9 @@ const DataManagement: React.FC = () => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: [activeTab] });
              if (activeTab === 'users') queryClient.invalidateQueries({ queryKey: ['faculty'] });
+             if (activeTab === 'faculty' || activeTab === 'batches' || activeTab === 'departments') {
+                queryClient.invalidateQueries({ queryKey: ['users'] });
+            }
             toast.success(`Item deleted successfully.`);
         },
         onError: (error: Error) => {
@@ -316,6 +323,15 @@ const DataManagement: React.FC = () => {
                     </nav>
                 </div>
                 
+                {activeTab === 'users' && (
+                    <div className="mb-4 p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-accent flex items-center gap-3">
+                        <Info size={18} />
+                        <span>
+                            <strong>Note:</strong> Faculty, Student, and Department Head accounts are created automatically when you add new records in their respective tabs. You can only manually create Admin roles here.
+                        </span>
+                    </div>
+                )}
+
                 <DataTable<any>
                     columns={columnsMap[activeTab]}
                     data={currentData}

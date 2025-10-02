@@ -2,6 +2,7 @@ import React from 'react';
 import { Pencil, Trash2 } from 'lucide-react';
 import { GlassButton } from './GlassButton';
 import { Skeleton } from './ui/Skeleton';
+import { cn } from '../utils/cn';
 
 interface DataTableProps<T extends { id: string }> {
   columns: {
@@ -28,7 +29,7 @@ function DataTableInner<T extends { id: string }>({ columns, data, onEdit, onDel
           </thead>
           <tbody>
             {Array.from({ length: 5 }).map((_, rowIndex) => (
-              <tr key={rowIndex} className="border-b border-[var(--border)]">
+              <tr key={rowIndex} className={cn("border-b border-[var(--border)]", rowIndex % 2 !== 0 && 'bg-panel-strong/40')}>
                 {columns.map((col, colIndex) => (
                   <td key={colIndex} className="px-6 py-4">
                     <Skeleton className="h-4 w-full rounded-md" />
@@ -64,8 +65,11 @@ function DataTableInner<T extends { id: string }>({ columns, data, onEdit, onDel
           </tr>
         </thead>
         <tbody>
-          {data.map(item => (
-            <tr key={item.id} className="border-b border-[var(--border)] hover:bg-panel-strong">
+          {data.map((item, index) => (
+            <tr key={item.id} className={cn(
+                "border-b border-[var(--border)] transition-colors duration-200 hover:bg-panel",
+                index % 2 !== 0 ? 'bg-panel-strong/40' : 'bg-transparent'
+            )}>
               {columns.map(col => (
                 <td key={String(col.accessor)} className="px-6 py-4 text-[var(--text-white)]">
                   {col.render ? col.render(item) : String(item[col.accessor] ?? '')}

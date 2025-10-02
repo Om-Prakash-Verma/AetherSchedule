@@ -39,6 +39,7 @@ AetherSchedule is a complete ecosystem designed to address the entire scheduling
 
 ### 🗂️ Centralized Data & User Administration
 - **Unified Data Hub:** A single source of truth for all institutional data: Subjects, Faculty, Rooms, Batches, and Departments, with full CRUD functionality.
+- **Automated Account Provisioning:** New faculty, batches, and departments automatically have corresponding user accounts (for login, HOD roles, and student representatives) created, streamlining user management.
 - **Data Portability & System Reset:** Full import/export of foundational data via JSON, plus a secure 'danger zone' feature for SuperAdmins to reset the database.
 - **Role-Based Access Control (RBAC):** A robust permission system ensures users only see and interact with the features relevant to their role.
 

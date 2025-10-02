@@ -63,12 +63,12 @@ export const Sidebar: React.FC = () => {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative
               ${isSidebarCollapsed ? 'justify-center' : ''}
               ${ currentPage === item.name
-                ? 'text-[var(--text-white)]'
+                ? 'bg-panel-strong text-white'
                 : 'text-[var(--text-muted)] hover:bg-panel-strong hover:text-[var(--text-white)]'
             }`}
           >
              {currentPage === item.name && (
-                <span className="absolute inset-0 bg-[hsl(var(--accent-hsl)_/_0.1)] border border-[hsl(var(--accent-hsl)_/_0.3)] rounded-lg shadow-inner" style={{boxShadow: 'inset 0 0 10px 0 hsl(217.2 91.2% 59.8% / 0.2)'}}></span>
+                <span className="absolute left-0 top-2 bottom-2 w-1 bg-accent rounded-r-full"></span>
              )}
             <item.icon className={`h-5 w-5 shrink-0 transition-colors ${currentPage === item.name ? 'text-[var(--accent)]' : ''}`} />
             <span className={`relative transition-opacity duration-200 whitespace-nowrap ${isSidebarCollapsed ? 'opacity-0 hidden' : 'opacity-100'}`}>{item.name}</span>

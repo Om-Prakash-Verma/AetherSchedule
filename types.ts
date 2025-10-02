@@ -25,6 +25,7 @@ export interface User {
   role: Role;
   batchId?: string | null; // for students
   facultyId?: string | null; // for faculty
+  departmentId?: string | null; // for department heads
 }
 
 export interface Subject {

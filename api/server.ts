@@ -1,4 +1,6 @@
 
+
+
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { db } from '../db';
@@ -85,6 +87,14 @@ app.onError((err, c) => {
   return c.json({ message: err.message || 'An internal server error occurred' }, 500);
 });
 
+
+// --- HELPERS ---
+const createIdFromName = (name: string, prefix = ''): string => {
+    const sanitized = name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    return prefix ? `${prefix}_${sanitized}` : sanitized;
+};
+
+
 // --- ROUTES ---
 
 // Auth
@@ -123,7 +133,7 @@ app.get('/settings', async (c) => {
 // CRUD operations
 const createCrudEndpoints = <T extends { id: string }>(
     path: string, 
-    table: typeof schema.subjects | typeof schema.faculty | typeof schema.rooms | typeof schema.users | typeof schema.departments
+    table: typeof schema.subjects | typeof schema.rooms | typeof schema.users
 ) => {
     app.post(`/${path}`, async (c) => {
         const item = await c.req.json();
@@ -149,12 +159,94 @@ const createCrudEndpoints = <T extends { id: string }>(
 };
 
 createCrudEndpoints('subjects', schema.subjects);
-createCrudEndpoints('faculty', schema.faculty);
 createCrudEndpoints('rooms', schema.rooms);
 createCrudEndpoints('users', schema.users);
-createCrudEndpoints('departments', schema.departments);
 
-// Special case for Batches due to 'allocations' virtual property
+
+// Custom CRUD for Faculty with automatic user creation
+app.post('/faculty', async (c) => {
+    const facultyData: Faculty = await c.req.json();
+    const existing = await db.query.faculty.findFirst({ where: eq(schema.faculty.id, facultyData.id) });
+
+    if (existing) { // UPDATE
+        const [updatedFaculty] = await db.update(schema.faculty).set(facultyData).where(eq(schema.faculty.id, facultyData.id)).returning();
+        if (existing.userId && facultyData.name !== existing.name) {
+            await db.update(schema.users).set({ name: facultyData.name }).where(eq(schema.users.id, existing.userId));
+        }
+        return c.json(updatedFaculty);
+    } else { // CREATE
+        const newFacultyId = facultyData.id || `fac_${createIdFromName(facultyData.name)}`;
+        const [createdFaculty] = await db.insert(schema.faculty).values({ ...facultyData, id: newFacultyId, userId: null }).returning();
+
+        const newUserId = `user_${createIdFromName(createdFaculty.name)}`;
+        const userEmail = `${createIdFromName(createdFaculty.name)}@test.com`;
+        const [newUser] = await db.insert(schema.users).values({
+            id: newUserId,
+            name: createdFaculty.name,
+            email: userEmail,
+            role: 'Faculty',
+            facultyId: createdFaculty.id,
+        }).onConflictDoNothing().returning();
+
+        if (newUser) {
+            const [updatedFaculty] = await db.update(schema.faculty).set({ userId: newUser.id }).where(eq(schema.faculty.id, createdFaculty.id)).returning();
+            return c.json(updatedFaculty, 201);
+        }
+        return c.json(createdFaculty, 201);
+    }
+});
+
+app.delete('/faculty/:id', async (c) => {
+    const { id } = c.req.param();
+    await db.delete(schema.users).where(eq(schema.users.facultyId, id));
+    await db.delete(schema.faculty).where(eq(schema.faculty.id, id));
+    return c.json({ success: true });
+});
+
+
+// Custom CRUD for Departments with automatic HOD user creation
+app.post('/departments', async (c) => {
+    const deptData: Department = await c.req.json();
+    const existing = await db.query.departments.findFirst({ where: eq(schema.departments.id, deptData.id) });
+
+    if (existing) { // UPDATE
+        const [updatedDept] = await db.update(schema.departments).set(deptData).where(eq(schema.departments.id, deptData.id)).returning();
+        if (deptData.name !== existing.name) {
+            const userToUpdate = await db.query.users.findFirst({ where: eq(schema.users.departmentId, existing.id) });
+            if (userToUpdate) {
+                await db.update(schema.users).set({ name: `${deptData.name} Head` }).where(eq(schema.users.id, userToUpdate.id));
+            }
+        }
+        return c.json(updatedDept);
+    } else { // CREATE
+        const newDeptId = deptData.id || `dept_${createIdFromName(deptData.name)}`;
+        const [newDept] = await db.insert(schema.departments).values({ ...deptData, id: newDeptId }).returning();
+
+        const userEmail = `${newDept.code.toLowerCase()}.hod@test.com`;
+        await db.insert(schema.users).values({
+            id: `user_${createIdFromName(newDept.name)}_hod`,
+            name: `${newDept.name} Head`,
+            email: userEmail,
+            role: 'DepartmentHead',
+            departmentId: newDept.id,
+        }).onConflictDoNothing();
+        
+        return c.json(newDept, 201);
+    }
+});
+
+app.delete('/departments/:id', async (c) => {
+    const { id } = c.req.param();
+    const associatedBatches = await db.query.batches.findFirst({ where: eq(schema.batches.departmentId, id) });
+    if (associatedBatches) {
+        return c.json({ message: 'Cannot delete department with associated batches. Please re-assign or delete them first.' }, 400);
+    }
+    await db.delete(schema.users).where(eq(schema.users.departmentId, id));
+    await db.delete(schema.departments).where(eq(schema.departments.id, id));
+    return c.json({ success: true });
+});
+
+// Custom CRUD for Batches with automatic Student Rep user creation
 app.post('/batches', async (c) => {
     const { allocations, ...batchData }: Batch & { allocations?: Record<string, string[]> } = await c.req.json();
     
@@ -163,7 +255,15 @@ app.post('/batches', async (c) => {
     if (existing) {
         await db.update(schema.batches).set(batchData).where(eq(schema.batches.id, batchData.id));
     } else {
-        await db.insert(schema.batches).values(batchData);
+        const [newBatch] = await db.insert(schema.batches).values(batchData).returning();
+        const userEmail = `${createIdFromName(newBatch.name)}.rep@test.com`;
+        await db.insert(schema.users).values({
+            id: `user_${createIdFromName(newBatch.name)}_rep`,
+            name: `${newBatch.name} Student Rep`,
+            email: userEmail,
+            role: 'Student',
+            batchId: newBatch.id,
+        }).onConflictDoNothing();
     }
 
     // Update faculty allocations for this batch
@@ -188,8 +288,10 @@ app.post('/batches', async (c) => {
 });
 app.delete('/batches/:id', async (c) => {
     const { id } = c.req.param();
-    // Delete dependent faculty allocations first, then the batch.
+    // Delete dependent faculty allocations and users first
     await db.delete(schema.facultyAllocations).where(eq(schema.facultyAllocations.batchId, id));
+    await db.delete(schema.users).where(eq(schema.users.batchId, id));
+    // Then the batch
     await db.delete(schema.batches).where(eq(schema.batches.id, id));
     return c.json({ success: true });
 });
@@ -214,12 +316,17 @@ app.post('/timetables', async (c) => {
         }
     }
     
+    const timetableForDb = {
+        ...timetable,
+        createdAt: new Date(timetable.createdAt),
+    };
+
     // Upsert the timetable.
-    const existing = await db.query.timetables.findFirst({ where: eq(schema.timetables.id, timetable.id) });
+    const existing = await db.query.timetables.findFirst({ where: eq(schema.timetables.id, timetableForDb.id) });
     if (existing) {
-        await db.update(schema.timetables).set(timetable).where(eq(schema.timetables.id, timetable.id));
+        await db.update(schema.timetables).set(timetableForDb).where(eq(schema.timetables.id, timetableForDb.id));
     } else {
-        await db.insert(schema.timetables).values(timetable);
+        await db.insert(schema.timetables).values(timetableForDb);
     }
 
     return c.json(timetable);
@@ -287,17 +394,18 @@ app.post('/constraints/availability', async (c) => {
 
 // Substitutions
 app.post('/substitutes/find', async (c) => {
-    const { assignmentId } = await c.req.json();
+    const { assignmentId, currentTimetableGrid } = await c.req.json();
 
-    const allTimetables: GeneratedTimetable[] = await db.query.timetables.findMany();
-    const allAssignments: ClassAssignment[] = allTimetables.flatMap(tt =>
-        Object.values(tt.timetable as TimetableGrid).flatMap(batchGrid =>
-            Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
-        )
+    if (!currentTimetableGrid) {
+        return c.json({ message: "Current timetable grid is required." }, 400);
+    }
+
+    const allAssignmentsInCurrentGrid: ClassAssignment[] = Object.values(currentTimetableGrid as TimetableGrid).flatMap(batchGrid =>
+        Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
     );
 
-    const targetAssignment = allAssignments.find(a => a.id === assignmentId);
-    if (!targetAssignment) return c.json({ message: "Target assignment not found" }, 404);
+    const targetAssignment = allAssignmentsInCurrentGrid.find(a => a.id === assignmentId);
+    if (!targetAssignment) return c.json({ message: "Target assignment not found in the provided timetable." }, 404);
 
     const allFaculty: Faculty[] = await db.query.faculty.findMany();
     const allSubjects: Subject[] = await db.query.subjects.findMany();
@@ -305,7 +413,7 @@ app.post('/substitutes/find', async (c) => {
     const allFacultyAllocations: FacultyAllocation[] = await db.query.facultyAllocations.findMany();
     const constraintsData: Partial<Constraints> = (await db.query.constraints.findFirst()) || {};
     
-    const rankedSubstitutes = await findRankedSubstitutes(targetAssignment, allFaculty, allSubjects, allAssignments, constraintsData.facultyAvailability || [], allFacultyAllocations, allBatches);
+    const rankedSubstitutes = await findRankedSubstitutes(targetAssignment, allFaculty, allSubjects, allAssignmentsInCurrentGrid, constraintsData.facultyAvailability || [], allFacultyAllocations, allBatches);
     return c.json(rankedSubstitutes);
 });
 
@@ -468,7 +576,6 @@ app.post('/data/import', async (c) => {
     }
     
     // Perform operations sequentially without a transaction
-    // FIX: Corrected deletion logic to respect foreign key constraints
     
     // 1. Break the circular dependency between users and faculty by nullifying links
     await db.update(schema.users).set({ facultyId: null }).where(inArray(schema.users.role, ['Faculty']));

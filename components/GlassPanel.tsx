@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { cn } from '../utils/cn';
 
@@ -15,7 +16,7 @@ export const GlassPanel = React.forwardRef<HTMLDivElement, GlassPanelProps>(
       <div
         ref={ref} // Attach the ref here
         className={cn(
-          'bg-panel/90 backdrop-blur-xl border border-[var(--border)] rounded-xl shadow-lg',
+          'bg-gradient-to-br from-[hsl(var(--panel-hsl)_/_0.9)] to-[hsl(var(--panel-strong-hsl)_/_0.9)] backdrop-blur-xl border border-[var(--border)] rounded-xl shadow-lg',
           className
         )}
         {...props} // FIX: Spread remaining props to the div element

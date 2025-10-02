@@ -1,4 +1,5 @@
 
+
 import { pgTable, text, integer, boolean, jsonb, timestamp, varchar, primaryKey, real } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import type {
@@ -20,6 +21,7 @@ export const users = pgTable('users', {
   role: text('role').$type<Role>().notNull(),
   batchId: text('batch_id').references(() => batches.id),
   facultyId: text('faculty_id').references(() => faculty.id),
+  departmentId: text('department_id').references(() => departments.id),
 });
 
 export const departments = pgTable('departments', {
@@ -131,7 +133,11 @@ export const usersRelations = relations(users, ({ one }) => ({
     faculty: one(faculty, {
         fields: [users.facultyId],
         references: [faculty.id]
-    })
+    }),
+    department: one(departments, {
+        fields: [users.departmentId],
+        references: [departments.id]
+    }),
 }));
 
 export const facultyRelations = relations(faculty, ({ one, many }) => ({
@@ -143,7 +149,8 @@ export const facultyRelations = relations(faculty, ({ one, many }) => ({
 }));
 
 export const departmentsRelations = relations(departments, ({ many }) => ({
-    batches: many(batches)
+    batches: many(batches),
+    users: many(users),
 }));
 
 export const batchesRelations = relations(batches, ({ one, many }) => ({

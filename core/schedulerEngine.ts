@@ -2,7 +2,7 @@
 
 import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid, TimetableSettings, PinnedAssignment, FacultyAllocation, DiagnosticIssue } from '../types';
 import { isFacultyAvailable, isRoomAvailable, isBatchAvailable } from './conflictChecker';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, type GenerateContentResponse } from "@google/genai";
 import { generateTimeSlots } from '../utils/time';
 
 // --- GEMINI API INITIALIZATION ---
@@ -398,7 +398,13 @@ const geminiCreativeIntervention = async (
             Provide your response as a JSON object containing the IDs of the two classes to swap, with keys "classId1" and "classId2".
         `;
 
-        const response = await ai.models.generateContent({
+        const INTERVENTION_TIMEOUT_MS = 15000; // 15 seconds
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini intervention timed out after ${INTERVENTION_TIMEOUT_MS}ms`)), INTERVENTION_TIMEOUT_MS)
+        );
+
+        const geminiPromise = ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -413,6 +419,8 @@ const geminiCreativeIntervention = async (
                 },
             },
         });
+
+        const response = await Promise.race([geminiPromise, timeoutPromise]) as GenerateContentResponse;
         
         const { classId1, classId2 } = JSON.parse(response.text);
 
@@ -428,7 +436,7 @@ const geminiCreativeIntervention = async (
         return null;
 
     } catch (error) {
-        console.error("Gemini creative intervention failed:", error);
+        console.error("Gemini creative intervention failed (or timed out):", error);
         return null;
     }
 };
@@ -599,6 +607,7 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
     let bestScores: number[] = [];
 
     for (const phase of strategy) {
+        let interventionUsedThisPhase = false;
         for (let gen = 0; gen < phase.generations; gen++) {
             population = population.map(individual => ({
                 ...individual,
@@ -623,8 +632,9 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
             
             // --- GEMINI INTERVENTION ---
             const interventionStagnation = bestScores.slice(-STAGNATION_LIMIT_FOR_INTERVENTION).filter(s => s === bestScore).length;
-            if (interventionStagnation >= STAGNATION_LIMIT_FOR_INTERVENTION && gen > STAGNATION_LIMIT_FOR_INTERVENTION) {
+            if (interventionStagnation >= STAGNATION_LIMIT_FOR_INTERVENTION && gen > STAGNATION_LIMIT_FOR_INTERVENTION && !interventionUsedThisPhase) {
                 console.log("Stagnation detected, attempting Gemini creative intervention...");
+                interventionUsedThisPhase = true; // Attempt intervention only once per phase
                 const intervention = await geminiCreativeIntervention(population[0].timetable, allSubjects, allFaculty, allRooms, batches, days);
                 if (intervention) {
                     const [assignment1, assignment2] = intervention;

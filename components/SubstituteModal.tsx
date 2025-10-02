@@ -1,11 +1,12 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './ui/Modal';
 import { GlassButton } from './GlassButton';
 import { GlassSelect } from './ui/GlassSelect';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
-import type { ClassAssignment, Substitution, Subject, RankedSubstitute } from '../types';
+import type { ClassAssignment, Substitution, Subject, RankedSubstitute, TimetableGrid } from '../types';
 import { Loader2, Sparkles, BookOpen, Feather, ThumbsUp, CalendarCheck2 } from 'lucide-react';
 import { Skeleton } from './ui/Skeleton';
 import { cn } from '../utils/cn';
@@ -13,7 +14,6 @@ import { useQuery } from '@tanstack/react-query';
 
 const ReasonIcon: React.FC<{ reason: string }> = ({ reason }) => {
     const r = reason.toLowerCase();
-    // FIX: Removed invalid 'title' prop from Lucide icons. Tooltip is handled by the parent component.
     if (r.includes('original subject')) return <BookOpen className="w-4 h-4 text-green-400" />;
     if (r.includes('workload')) return <Feather className="w-4 h-4 text-blue-400" />;
     if (r.includes('allocated to batch')) return <ThumbsUp className="w-4 h-4 text-yellow-400" />;
@@ -26,9 +26,10 @@ interface SubstituteModalProps {
   onClose: () => void;
   onConfirm: (substitution: Omit<Substitution, 'id' | 'createdAt'>) => void;
   targetAssignment: ClassAssignment;
+  currentTimetableGrid: TimetableGrid;
 }
 
-export const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClose, onConfirm, targetAssignment }) => {
+export const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClose, onConfirm, targetAssignment, currentTimetableGrid }) => {
     const { data: allSubjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
     const { data: allFaculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
     const [substitutes, setSubstitutes] = useState<RankedSubstitute[]>([]);
@@ -49,7 +50,7 @@ export const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClos
             const fetchSubstitutes = async () => {
                 setIsLoading(true);
                 try {
-                    const foundSubstitutes = await api.findSubstitutes(targetAssignment.id);
+                    const foundSubstitutes = await api.findSubstitutes(targetAssignment.id, currentTimetableGrid);
                     setSubstitutes(foundSubstitutes);
                 } catch (e: any) {
                     toast.error(e.message || "Failed to find substitutes.");
@@ -60,7 +61,7 @@ export const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClos
             };
             fetchSubstitutes();
         }
-    }, [isOpen, targetAssignment, toast]);
+    }, [isOpen, targetAssignment, currentTimetableGrid, toast]);
     
     const selectedSubstitute = useMemo(() => {
         return substitutes.find(s => s.faculty.id === selectedFacultyId);

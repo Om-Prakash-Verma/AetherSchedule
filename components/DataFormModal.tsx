@@ -9,6 +9,7 @@ import type { Subject, User } from '../types';
 import { useQuery } from '@tanstack/react-query';
 import * as api from '../services';
 import { generateTimeSlots } from '../utils/time';
+import { Info } from 'lucide-react';
 
 type DataType = 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'users' | 'pinned' | 'leaves';
 
@@ -274,13 +275,17 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
       );
       case 'users': return (
           <>
+            <div className="mb-2 p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-accent flex items-center gap-3">
+                <Info size={18} />
+                <span>Faculty, Student, and HOD accounts are created automatically.</span>
+            </div>
             <input name="name" placeholder="Full Name" value={formData.name || ''} onChange={handleChange} className="glass-input" required />
             <input name="email" type="email" placeholder="Email Address" value={formData.email || ''} onChange={handleChange} className="glass-input" required />
             <GlassSelect
               placeholder="Select Role"
               value={formData.role || ''}
               onChange={(value) => handleSelectChange('role', value)}
-              options={ROLES.map(role => ({ value: role, label: role }))}
+              options={ROLES.filter(r => ['SuperAdmin', 'TimetableManager'].includes(r)).map(role => ({ value: role, label: role }))}
             />
             {formData.role === 'Student' && (
                 <GlassSelect

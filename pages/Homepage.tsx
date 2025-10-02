@@ -59,7 +59,7 @@ const ProblemSolutionCard: React.FC<{ icon: React.ElementType, title: string, it
 );
 
 const CorePillarCard: React.FC<{ icon: React.ElementType, title: string, children: React.ReactNode }> = ({ icon: Icon, title, children }) => (
-    <GlassPanel className="p-8 text-center group transition-all duration-300 hover:border-[hsl(var(--accent-hsl)_/_0.5)] hover:-translate-y-2">
+    <GlassPanel className="p-8 text-center group transition-all duration-300 hover:border-accent/50 hover:-translate-y-2 hover:shadow-[0_0_40px_hsl(var(--accent-hsl)_/_0.2)]">
         <div className="inline-flex items-center justify-center p-4 bg-[hsl(var(--accent-hsl)_/_0.1)] border border-[hsl(var(--accent-hsl)_/_0.2)] rounded-2xl mb-4 transition-all duration-300 group-hover:scale-110 group-hover:bg-[hsl(var(--accent-hsl)_/_0.2)]">
           <Icon className="h-10 w-10 text-[var(--accent)]" />
         </div>
@@ -99,6 +99,7 @@ const Homepage: React.FC<HomepageProps> = (props) => {
             </div>
           </div>
           <div className="relative animate-fade-in-left">
+            <div className="absolute -inset-1/4 bg-accent blur-[120px] opacity-15 rounded-full -z-10" />
             <AnimatedTimetableGrid />
           </div>
         </section>

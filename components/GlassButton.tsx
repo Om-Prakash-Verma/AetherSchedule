@@ -20,7 +20,7 @@ export const GlassButton: React.FC<GlassButtonProps> = ({
 
   const variantClasses = {
     primary: 'bg-[var(--accent)] text-[var(--text-white)] border-transparent hover:bg-[var(--accent)]/90',
-    secondary: 'bg-[hsl(var(--panel-hsl)_/_0.5)] text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--panel)] hover:text-[var(--text-white)]',
+    secondary: 'bg-[hsl(var(--panel-hsl)_/_0.75)] text-[var(--text-muted)] border-[var(--border)] hover:bg-[var(--panel)] hover:text-[var(--text-white)]',
   };
 
   return (

@@ -32,7 +32,7 @@ const Dashboard: React.FC = () => {
                 {stats.map((stat, index) => (
                     <GlassPanel 
                         key={stat.label} 
-                        className="p-6 animate-fade-in-up"
+                        className="p-6 animate-fade-in-up transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_20px_hsl(var(--accent-hsl)_/_0.2)]"
                         style={{ animationDelay: `${index * 100}ms`}}
                     >
                         <div className="flex items-center justify-between">

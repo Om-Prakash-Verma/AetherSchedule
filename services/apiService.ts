@@ -119,10 +119,10 @@ export const saveFacultyAvailability = (data: FacultyAvailability): Promise<Facu
 };
 
 // --- SUBSTITUTIONS ---
-export const findSubstitutes = (assignmentId: string): Promise<RankedSubstitute[]> => {
+export const findSubstitutes = (assignmentId: string, currentTimetableGrid: TimetableGrid): Promise<RankedSubstitute[]> => {
     return apiFetch('/api/substitutes/find', {
         method: 'POST',
-        body: JSON.stringify({ assignmentId }),
+        body: JSON.stringify({ assignmentId, currentTimetableGrid }),
     });
 };
 
