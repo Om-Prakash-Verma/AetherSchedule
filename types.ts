@@ -14,7 +14,7 @@ export type Page =
   | 'Scheduler'
   | 'Data Management'
   | 'Constraints'
-  | 'Reports'
+  | 'Analytics'
   | 'Settings'
   | 'Homepage';
 
@@ -98,10 +98,11 @@ export interface GeneratedTimetable {
   version: number;
   status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Archived';
   comments: { userId: string, userName: string, text: string, timestamp: string }[];
-  createdAt: string;
+  createdAt: Date;
   metrics: TimetableMetrics;
   timetable: TimetableGrid;
   feedback?: TimetableFeedback[];
+  analytics?: AnalyticsReport;
 }
 
 export interface TimetableMetrics {
@@ -153,14 +154,14 @@ export interface Substitution {
     originalAssignmentId: string;
     originalFacultyId: string; // The specific faculty member being substituted out of the original assignment
     substituteFacultyId: string;
-    // This is the key change: the subject taught can be different
     substituteSubjectId: string; 
+    roomId: string; // This makes the substitution record self-contained
     batchId: string;
     day: number;
     slot: number;
-    // A substitution can be for a single day or a date range
     startDate: string; // YYYY-MM-DD
     endDate: string; // YYYY-MM-DD
+    createdAt: string; // To determine which substitution takes precedence
 }
 
 export interface Constraints {
@@ -179,8 +180,22 @@ export interface GlobalConstraints {
     // AI Tuned weights
     aiStudentGapWeight: number;
     aiFacultyGapWeight: number;
+
     aiFacultyWorkloadDistributionWeight: number;
     aiFacultyPreferenceWeight: number;
+    constraintPresets?: ConstraintPreset[];
+}
+
+export interface ConstraintPreset {
+    id: string;
+    name: string;
+    description: string;
+    rules: {
+        target: 'faculty' | 'student' | 'class';
+        metric: 'consecutive_hours' | 'daily_hours' | 'weekly_hours';
+        operator: 'max' | 'min';
+        value: number;
+    }[];
 }
 
 export interface TimetableSettings {
@@ -193,10 +208,34 @@ export interface TimetableSettings {
 
 
 export interface Conflict {
-    type: 'Faculty' | 'Room';
+    type: 'Faculty' | 'Room' | 'Batch';
     message: string;
 }
 
 export type DropChange = 
   | { type: 'move'; assignment: ClassAssignment; to: { day: number; slot: number } }
   | { type: 'swap'; assignment1: ClassAssignment; assignment2: ClassAssignment };
+
+
+export interface DiagnosticIssue {
+    severity: 'critical' | 'warning';
+    title: string;
+    description: string;
+    suggestion: string;
+}
+
+export interface AnalyticsReport {
+    id: string;
+    timetableId: string;
+    facultyWorkload: { facultyId: string; facultyName: string; totalHours: number; }[];
+    roomUtilization: { roomId: string; roomName: string; totalHours: number; capacity: number; utilizationPercent: number; }[];
+    studentQoL: { batchId: string; batchName: string; avgGapsPerDay: number; maxConsecutiveHours: number; }[];
+    heatmapData: Record<string, number[][]>; // roomId -> day -> slot -> usage (0 or 1)
+}
+
+export interface RankedSubstitute {
+    faculty: Faculty;
+    suitableSubjects: Subject[];
+    score: number;
+    reasons: string[];
+}

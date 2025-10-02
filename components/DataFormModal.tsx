@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { GlassButton } from './GlassButton';
-import { useAppContext } from '../hooks/useAppContext';
 import { MultiSelectDropdown } from './ui/MultiSelectDropdown';
 import { ROLES, DAYS_OF_WEEK } from '../constants';
 import { useToast } from '../hooks/useToast';
 import { GlassSelect } from './ui/GlassSelect';
 import { Modal } from './ui/Modal';
-import type { Subject } from '../types';
+import type { Subject, User } from '../types';
+import { useQuery } from '@tanstack/react-query';
+import * as api from '../services';
 
 type DataType = 'subjects' | 'faculty' | 'rooms' | 'batches' | 'departments' | 'users' | 'pinned' | 'leaves';
 
@@ -19,14 +20,26 @@ interface DataFormModalProps {
 }
 
 export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, onSave, dataType, initialData }) => {
-  const { subjects, departments, faculty, rooms, batches, timeSlots, facultyAllocations } = useAppContext();
+  const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
+  const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: api.getDepartments });
+  const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
+  const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
+  const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
+  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: api.getUsers });
+  const { data: facultyAllocations = [] } = useQuery({ queryKey: ['facultyAllocations'], queryFn: api.getFacultyAllocations });
+  const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+  const timeSlots = settings?.timetableSettings ? [] : []; // Simplified for now
+
   const [formData, setFormData] = useState<any>({});
   const toast = useToast();
   
   useEffect(() => {
-    const data = initialData || {};
+    const data = initialData ? JSON.parse(JSON.stringify(initialData)) : {};
     if (dataType === 'users' && data.role !== 'Student') {
         delete data.batchId;
+    }
+    if (dataType === 'users' && data.role !== 'Faculty') {
+        delete data.facultyId;
     }
      // When editing a batch, preload its existing faculty allocations into the form state.
     if (dataType === 'batches' && data.id) {
@@ -55,6 +68,9 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
 
     if (name === 'role' && value !== 'Student') {
         delete newFormData.batchId;
+    }
+    if (name === 'role' && value !== 'Faculty') {
+        delete newFormData.facultyId;
     }
 
     setFormData(newFormData);
@@ -93,6 +109,15 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
         return;
     }
 
+    if (dataType === 'users') {
+        // Ensure another user doesn't have the same email
+        const isDuplicateEmail = users.some(u => u.email === formData.email && u.id !== formData.id);
+        if (isDuplicateEmail) {
+            toast.error('A user with this email address already exists.');
+            return;
+        }
+    }
+
     const dataToSave = { ...formData };
 
     // Normalize faculty allocations before saving
@@ -121,6 +146,14 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
   const roomOptions = rooms.map(r => ({ value: r.id, label: r.name }));
   const batchOptions = batches.map(b => ({ value: b.id, label: b.name }));
   const departmentOptions = departments.map(d => ({ value: d.id, label: d.name }));
+  
+  // For the user form, only show faculty members who don't already have a user account linked.
+  const unlinkedFacultyOptions = useMemo(() => {
+    const linkedFacultyIds = users.filter(u => u.facultyId).map(u => u.facultyId);
+    return faculty
+        .filter(f => !linkedFacultyIds.includes(f.id) || f.id === initialData?.facultyId)
+        .map(f => ({ value: f.id, label: f.name }));
+  }, [faculty, users, initialData]);
 
   const allocatedSubjects = useMemo(() => {
     if (dataType !== 'batches' || !formData.subjectIds) return [];
@@ -252,6 +285,14 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
                   options={batches.map(batch => ({ value: batch.id, label: batch.name }))}
                 />
             )}
+            {formData.role === 'Faculty' && (
+                <GlassSelect
+                  placeholder="Link to Faculty Record"
+                  value={formData.facultyId || ''}
+                  onChange={(value) => handleSelectChange('facultyId', value)}
+                  options={unlinkedFacultyOptions}
+                />
+            )}
           </>
       );
       case 'pinned': return (
@@ -279,8 +320,8 @@ export const DataFormModal: React.FC<DataFormModalProps> = ({ isOpen, onClose, o
   };
 
   const getTitle = () => {
-      const action = initialData ? 'Edit' : 'Add';
-      const typeName = dataType === 'pinned' ? 'Pinned Assignment' : dataType === 'leaves' ? 'Planned Leave' : dataType.charAt(0).toUpperCase() + dataType.slice(1, -1);
+      const action = initialData ? 'Edit' : 'Add New';
+      const typeName = dataType === 'pinned' ? 'Pinned Assignment' : dataType === 'leaves' ? 'Planned Leave' : (dataType.charAt(0).toUpperCase() + dataType.slice(1, -1));
       return `${action} ${typeName}`;
   }
 

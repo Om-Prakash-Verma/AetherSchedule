@@ -12,16 +12,16 @@ export const Header: React.FC = () => {
         <GlassPanel className="flex justify-between items-center gap-4 p-4">
             <div className="flex items-center gap-4">
                 {/* Hamburger Menu for Mobile */}
-                <button onClick={toggleSidebar} className="md:hidden text-text-muted hover:text-white">
+                <button onClick={toggleSidebar} className="md:hidden text-[var(--text-muted)] hover:text-[var(--text-white)]">
                 <Menu size={24} />
                 </button>
                 <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-white capitalize">{currentPage}</h1>
-                <p className="text-xs sm:text-sm text-text-muted hidden sm:block">Welcome back, {user?.name || 'Guest'}</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-[var(--text-white)] capitalize">{currentPage}</h1>
+                <p className="text-xs sm:text-sm text-[var(--text-muted)] hidden sm:block">Welcome back, {user?.name || 'Guest'}</p>
                 </div>
             </div>
             
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-4">
                 <RealTimeClock />
             </div>
         </GlassPanel>

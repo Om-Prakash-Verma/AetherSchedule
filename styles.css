@@ -1,17 +1,31 @@
 :root {
-    --bg: #0d1117;
-    --panel: #161b22;
-    --panel-strong: #101419;
-    --border: rgba(255, 255, 255, 0.15);
-    --text-white: #e6edf3;
-    --text-muted: #7d8590;
-    --accent: #3b82f6;
-    --danger: #f85149;
-    --green-400: #34d399;
-    --green-300: #6ee7b7;
-    --red-400: #f87171;
-    --red-300: #fca5a5;
-    --yellow-500: #f59e0b;
+    /* Dark Theme Variables */
+    --bg-hsl: 222 47% 11%;
+    --panel-hsl: 220 13% 13%;
+    --panel-strong-hsl: 220 13% 10%;
+    --border-hsl: 215 14% 34%;
+    --text-hsl: 215 16% 85%;
+    --text-muted-hsl: 216 12% 58%;
+    --accent-hsl: 217 91% 60%;
+    --danger-hsl: 0 84% 60%;
+    --green-hsl: 145 58% 51%;
+    --red-hsl: 0 84% 60%;
+    --yellow-hsl: 38 92% 50%;
+
+    --bg: hsl(var(--bg-hsl));
+    --panel: hsl(var(--panel-hsl));
+    --panel-strong: hsl(var(--panel-strong-hsl));
+    --border: hsla(var(--border-hsl), 0.2);
+    --text-white: hsl(var(--text-hsl));
+    --text-muted: hsl(var(--text-muted-hsl));
+    --accent: hsl(var(--accent-hsl));
+    --danger: hsl(var(--danger-hsl));
+
+    --green-400: hsl(var(--green-hsl));
+    --green-300: hsl(150 73% 67%);
+    --red-400: hsl(var(--red-hsl));
+    --red-300: hsl(0 92% 75%);
+    --yellow-500: hsl(var(--yellow-hsl));
 }
 
 html {
@@ -26,11 +40,22 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+button:active {
+    transform: scale(0.97);
+    transition: transform 0.1s ease;
+}
+
+/* Style for dropdown options to enforce dark theme */
+option {
+    background-color: var(--panel-strong);
+    color: var(--text-white);
+}
+
 .glass-input {
     width: 100%;
     padding: 0.75rem;
     border-radius: 0.5rem;
-    background-color: #0d1117;
+    background-color: var(--panel-strong); /* Using a darker panel for input contrast */
     border: 1px solid var(--border);
     transition: all 0.2s;
     color: var(--text-white);
@@ -63,6 +88,24 @@ input[type="range"]::-moz-range-thumb {
     cursor: pointer;
     border: 2px solid var(--bg);
 }
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--panel-strong);
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--panel);
+  border-radius: 4px;
+  border: 2px solid var(--panel-strong);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--border-hsl));
+}
+
 
 @keyframes pulse-danger {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -97,15 +140,14 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .bg-grid-pattern {
-    background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-image: linear-gradient(hsla(var(--border-hsl), 0.1) 1px, transparent 1px), linear-gradient(90deg, hsla(var(--border-hsl), 0.1) 1px, transparent 1px);
     background-size: 2rem 2rem;
 }
-
 
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -114,7 +156,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .animate-fade-in-up {
-  animation: fade-in-up 0.5s ease-out forwards;
+  animation: fade-in-up 0.3s ease-out forwards;
   opacity: 0;
 }
 
@@ -171,4 +213,43 @@ input[type="range"]::-moz-range-thumb {
 
 .animate-subtle-pulse:hover {
     animation: subtle-pulse 2s infinite;
+}
+
+.blinking-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 1.2em;
+  background-color: #6ee7b7; /* green-300 */
+  animation: blink 1s step-end infinite;
+  vertical-align: bottom;
+}
+
+@keyframes blink {
+  from, to { background-color: transparent }
+  50% { background-color: #6ee7b7; }
+}
+
+@keyframes line-in {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-line-in {
+    animation: line-in 0.2s ease-out forwards;
+    opacity: 0;
+}
+
+@keyframes modal-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.animate-modal-in {
+    animation: modal-in 0.2s ease-out forwards;
 }

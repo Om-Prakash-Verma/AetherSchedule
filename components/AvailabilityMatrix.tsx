@@ -82,7 +82,7 @@ export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availabi
         {/* Header */}
         <div />
         {DAYS_OF_WEEK.map(day => (
-          <div key={day} className="text-center font-semibold text-white p-2 text-sm sticky top-0 bg-panel z-10">
+          <div key={day} className="text-center font-semibold text-[var(--text-white)] p-2 text-sm sticky top-0 bg-panel z-10">
             {day}
           </div>
         ))}
@@ -90,7 +90,7 @@ export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availabi
         {/* Body */}
         {timeSlots.map((slot, slotIndex) => (
           <React.Fragment key={slot}>
-            <div className="text-right text-text-muted p-2 text-xs flex items-center justify-end font-mono sticky left-0 bg-panel z-10">
+            <div className="text-right text-[var(--text-muted)] p-2 text-xs flex items-center justify-end font-mono sticky left-0 bg-panel z-10">
               <span>{slot}</span>
             </div>
             {DAYS_OF_WEEK.map((_, dayIndex) => {
@@ -103,20 +103,20 @@ export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availabi
                   className={`group h-16 flex items-center justify-center rounded-lg transition-all duration-150 cursor-pointer border
                     ${
                       isAvailable 
-                        ? 'bg-green-500/20 border-green-500/40' 
-                        : 'bg-panel/50 border-transparent hover:bg-white/10 hover:border-dashed hover:border-text-muted/30'
+                        ? 'bg-[hsl(var(--green-hsl)_/_0.2)] border-[hsl(var(--green-hsl)_/_0.4)]' 
+                        : 'bg-[hsl(var(--panel-hsl)_/_0.5)] border-transparent hover:bg-[var(--panel)] hover:border-dashed hover:border-[var(--text-muted)]/30'
                     }`
                   }
                 >
                   {isAvailable ? (
                     <div className="text-center">
-                      <Check className="mx-auto h-5 w-5 text-green-400" />
-                      <span className="text-xs text-green-400/80">Available</span>
+                      <Check className="mx-auto h-5 w-5 text-[var(--green-400)]" />
+                      <span className="text-xs text-[var(--green-400)]/80">Available</span>
                     </div>
                   ) : (
                     <div className="text-center opacity-0 group-hover:opacity-100 transition-opacity">
-                       <Plus className="mx-auto h-5 w-5 text-text-muted" />
-                       <span className="text-xs text-text-muted">Set</span>
+                       <Plus className="mx-auto h-5 w-5 text-[var(--text-muted)]" />
+                       <span className="text-xs text-[var(--text-muted)]">Set</span>
                     </div>
                   )}
                 </div>

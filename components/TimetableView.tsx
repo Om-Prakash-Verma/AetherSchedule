@@ -1,9 +1,14 @@
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { GlassPanel } from './GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { DAYS_OF_WEEK } from '../constants';
 import type { GeneratedTimetable, ClassAssignment, Conflict, DropChange, SingleBatchTimetableGrid, Substitution } from '../types';
 import { GripVertical, AlertTriangle, Replace, UserCheck } from 'lucide-react';
+// FIX: Import useQuery and api to fetch data directly.
+import { useQuery } from '@tanstack/react-query';
+import * as api from '../services';
 
 interface TimetableViewProps {
   timetableData: Omit<GeneratedTimetable, 'timetable'> & { timetable: SingleBatchTimetableGrid };
@@ -36,7 +41,12 @@ const toYyyyMmDd = (date: Date) => {
 export const TimetableView: React.FC<TimetableViewProps> = ({ 
     timetableData, isEditable = false, onDropAssignment, onFindSubstitute, conflictMap, substitutions = [], viewDate = new Date() 
 }) => {
-  const { subjects, faculty, rooms, batches, timeSlots } = useAppContext();
+  // FIX: Fetch data with useQuery instead of getting it from context.
+  const { timeSlots } = useAppContext();
+  const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
+  const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
+  const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
+  const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
   
   const [draggingItem, setDraggingItem] = useState<ClassAssignment | null>(null);
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
@@ -202,7 +212,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                                 <p className="text-text-muted truncate">@{rooms.find(r => r.id === assignment.roomId)?.name || 'Unknown'}</p>
                                 { (timetableData.batchIds.length > 1 || timetableData.batchIds.length === 0) && (
                                     <p className="text-[var(--accent)] text-xs truncate mt-1">{getBatchForAssignment(assignment)?.name || 'Unknown'}</p>
-                                )}
+                                )};
                               </div>
                               <div className="absolute top-1 right-1 flex items-center gap-1">
                                 {/* FIX: Added a detailed tooltip to the conflict icon for better UX. */}
@@ -232,7 +242,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                                     style={{ animationDuration: '150ms' }}
                                 >
                                     <Replace size={14} />
-                                    Find Substitute Teacher
+                                    {!!activeSubstitution ? 'Change' : 'Find'} Substitute Teacher
                                 </button>
                             </div>
                         )}

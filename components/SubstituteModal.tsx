@@ -1,218 +1,208 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './ui/Modal';
 import { GlassButton } from './GlassButton';
 import { GlassSelect } from './ui/GlassSelect';
-import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
-import type { ClassAssignment, Faculty, Subject, Substitution } from '../types';
-import { Loader2, CheckCircle, Award, Calendar, BookOpen } from 'lucide-react';
-import { GlassPanel } from './GlassPanel';
+import type { ClassAssignment, Substitution, Subject, RankedSubstitute } from '../types';
+import { Loader2, Sparkles, BookOpen, Feather, ThumbsUp, CalendarCheck2 } from 'lucide-react';
+import { Skeleton } from './ui/Skeleton';
+import { cn } from '../utils/cn';
+import { useQuery } from '@tanstack/react-query';
+
+const ReasonIcon: React.FC<{ reason: string }> = ({ reason }) => {
+    const r = reason.toLowerCase();
+    // FIX: Removed invalid 'title' prop from Lucide icons. Tooltip is handled by the parent component.
+    if (r.includes('original subject')) return <BookOpen className="w-4 h-4 text-green-400" />;
+    if (r.includes('workload')) return <Feather className="w-4 h-4 text-blue-400" />;
+    if (r.includes('allocated to batch')) return <ThumbsUp className="w-4 h-4 text-yellow-400" />;
+    if (r.includes('compact')) return <CalendarCheck2 className="w-4 h-4 text-purple-400" />;
+    return null;
+}
 
 interface SubstituteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (substitution: Omit<Substitution, 'id'>) => void;
+  onConfirm: (substitution: Omit<Substitution, 'id' | 'createdAt'>) => void;
   targetAssignment: ClassAssignment;
 }
 
-interface RankedSubstitute {
-    facultyId: string;
-    score: number;
-    reasons: string[];
-    canTeachOriginalSubject: boolean;
-    alternativeSubjectIds: string[];
-}
-
 export const SubstituteModal: React.FC<SubstituteModalProps> = ({ isOpen, onClose, onConfirm, targetAssignment }) => {
-  const { faculty, subjects } = useAppContext();
-  const [rankedSubstitutes, setRankedSubstitutes] = useState<RankedSubstitute[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [selectedSubstitute, setSelectedSubstitute] = useState<{ facultyId: string; subjectId: string; } | null>(null);
-  const [dateRange, setDateRange] = useState({ 
-      startDate: new Date().toISOString().split('T')[0],
-      endDate: new Date().toISOString().split('T')[0]
-  });
-  const toast = useToast();
+    const { data: allSubjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
+    const { data: allFaculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
+    const [substitutes, setSubstitutes] = useState<RankedSubstitute[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
+    const [selectedFacultyId, setSelectedFacultyId] = useState('');
+    const [selectedSubjectId, setSelectedSubjectId] = useState('');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
+    const toast = useToast();
 
-  useEffect(() => {
-    if (isOpen) {
-      const find = async () => {
-        setIsLoading(true);
-        try {
-          const results = await api.findSubstitutes(targetAssignment.id);
-          setRankedSubstitutes(results);
-        } catch (e: any) {
-          toast.error(e.message || "Failed to find substitutes.");
-        } finally {
-          setIsLoading(false);
+    useEffect(() => {
+        if (isOpen && targetAssignment) {
+            setSelectedFacultyId('');
+            setSelectedSubjectId('');
+            setStartDate('');
+            setEndDate('');
+            
+            const fetchSubstitutes = async () => {
+                setIsLoading(true);
+                try {
+                    const foundSubstitutes = await api.findSubstitutes(targetAssignment.id);
+                    setSubstitutes(foundSubstitutes);
+                } catch (e: any) {
+                    toast.error(e.message || "Failed to find substitutes.");
+                    setSubstitutes([]);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchSubstitutes();
         }
-      };
-      find();
-    } else {
-        setRankedSubstitutes([]);
-        setSelectedSubstitute(null);
-    }
-  }, [isOpen, targetAssignment.id, toast]);
+    }, [isOpen, targetAssignment, toast]);
+    
+    const selectedSubstitute = useMemo(() => {
+        return substitutes.find(s => s.faculty.id === selectedFacultyId);
+    }, [substitutes, selectedFacultyId]);
+    
+    useEffect(() => {
+        if (selectedSubstitute) {
+            const canTeachOriginal = selectedSubstitute.suitableSubjects.some(s => s.id === targetAssignment.subjectId);
+            setSelectedSubjectId(canTeachOriginal ? targetAssignment.subjectId : '');
+        } else {
+            setSelectedSubjectId('');
+        }
+    }, [selectedSubstitute, targetAssignment.subjectId]);
 
-  const getFacultyDetails = (facultyId: string) => faculty.find(f => f.id === facultyId);
-  const getSubjectDetails = (subjectId: string) => subjects.find(s => s.id === subjectId);
 
-  const handleSelectSubstitute = (sub: RankedSubstitute) => {
-    let subjectIdToSet = targetAssignment.subjectId;
-    if (!sub.canTeachOriginalSubject) {
-        subjectIdToSet = sub.alternativeSubjectIds.length > 0 
-            ? sub.alternativeSubjectIds[0] 
-            : (getFacultyDetails(sub.facultyId)?.subjectIds[0] || '');
-    }
-    setSelectedSubstitute({
-        facultyId: sub.facultyId,
-        subjectId: subjectIdToSet,
-    });
-  };
+    const handleSubmit = () => {
+        if (!selectedFacultyId || !selectedSubjectId || !startDate || !endDate) {
+            toast.error("Please fill all fields.");
+            return;
+        }
+        if (new Date(startDate) > new Date(endDate)) {
+            toast.error("Start date cannot be after end date.");
+            return;
+        }
 
-  const handleSubjectChange = (subjectId: string | number) => {
-    if (selectedSubstitute) {
-        setSelectedSubstitute(prev => prev ? { ...prev, subjectId: String(subjectId) } : null);
-    }
-  };
-
-  const handleSubmit = () => {
-    if (!selectedSubstitute) {
-        toast.error("Please select a substitute teacher.");
-        return;
-    }
-    if (!selectedSubstitute.subjectId) {
-        toast.error("Could not determine a valid subject for this substitute. Please check their profile.");
-        return;
-    }
-    if (!dateRange.startDate || !dateRange.endDate || new Date(dateRange.startDate) > new Date(dateRange.endDate)) {
-        toast.error("Please select a valid date range.");
-        return;
-    }
-    // FIX: Use `facultyIds[0]` as the `ClassAssignment` type was updated for multi-teacher support.
-    // Since this modal only opens for single-teacher classes, `facultyIds[0]` is the correct value.
-    const originalFacultyId = targetAssignment.facultyIds[0];
-    if (!originalFacultyId) {
-        toast.error("Could not identify the original faculty member for this assignment.");
-        return;
-    }
-
-    const substitution: Omit<Substitution, 'id'> = {
-        originalAssignmentId: targetAssignment.id,
-        originalFacultyId: originalFacultyId,
-        substituteFacultyId: selectedSubstitute.facultyId,
-        substituteSubjectId: selectedSubstitute.subjectId,
-        batchId: targetAssignment.batchId,
-        day: targetAssignment.day,
-        slot: targetAssignment.slot,
-        startDate: dateRange.startDate,
-        endDate: dateRange.endDate,
+        const substitution: Omit<Substitution, 'id' | 'createdAt'> = {
+            originalAssignmentId: targetAssignment.id,
+            originalFacultyId: targetAssignment.facultyIds[0], // Assuming single-teacher class
+            substituteFacultyId: selectedFacultyId,
+            substituteSubjectId: selectedSubjectId,
+            roomId: targetAssignment.roomId,
+            batchId: targetAssignment.batchId,
+            day: targetAssignment.day,
+            slot: targetAssignment.slot,
+            startDate,
+            endDate,
+        };
+        onConfirm(substitution);
     };
-    onConfirm(substitution);
-  };
-  
-  const originalSubject = getSubjectDetails(targetAssignment.subjectId);
-  // FIX: Use `facultyIds[0]` to get the single original faculty member.
-  const originalFaculty = getFacultyDetails(targetAssignment.facultyIds[0]);
 
-  const footer = (
-    <>
-      <GlassButton type="button" variant="secondary" onClick={onClose}>Cancel</GlassButton>
-      <GlassButton type="button" onClick={handleSubmit} disabled={!selectedSubstitute}>Confirm Substitution</GlassButton>
-    </>
-  );
+    const targetSubject = allSubjects.find(s => s.id === targetAssignment.subjectId);
+    const targetFaculty = allFaculty.find(f => f.id === targetAssignment.facultyIds[0]);
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title="Intelligent Substitute Finder"
-      footer={footer}
-      className="max-w-3xl"
-    >
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Left Panel: Class Details & Date */}
-        <div className="space-y-4">
-            <GlassPanel className="p-4">
-                <h3 className="font-bold text-white mb-2">Class to be Substituted</h3>
-                <p className="text-sm text-text-muted"><span className="font-semibold text-white">{originalSubject?.name}</span> taught by <span className="font-semibold text-white">{originalFaculty?.name}</span></p>
-            </GlassPanel>
-            <GlassPanel className="p-4">
-                 <h3 className="font-bold text-white mb-2">Substitution Period</h3>
-                 <div className="flex gap-2 items-center">
-                    <input type="date" value={dateRange.startDate} onChange={e => setDateRange(p => ({...p, startDate: e.target.value}))} className="glass-input text-sm"/>
-                    <span className="text-text-muted">to</span>
-                    <input type="date" value={dateRange.endDate} onChange={e => setDateRange(p => ({...p, endDate: e.target.value}))} className="glass-input text-sm"/>
-                 </div>
-            </GlassPanel>
-             {selectedSubstitute && (
-                <GlassPanel className="p-4 bg-[var(--accent)]/10 border-[var(--accent)]/20">
-                    <h3 className="font-bold text-[var(--accent)] mb-2">Final Assignment</h3>
-                    <p className="text-sm">
-                        <span className="font-semibold text-white">{getFacultyDetails(selectedSubstitute.facultyId)?.name}</span> will teach <span className="font-semibold text-white">{getSubjectDetails(selectedSubstitute.subjectId)?.name}</span> from {dateRange.startDate} to {dateRange.endDate}.
-                    </p>
-                </GlassPanel>
-             )}
-        </div>
+    const footer = (
+      <>
+        <GlassButton type="button" variant="secondary" onClick={onClose}>Cancel</GlassButton>
+        <GlassButton type="button" onClick={handleSubmit}>Create Substitution</GlassButton>
+      </>
+    );
 
-        {/* Right Panel: Ranked List */}
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-            <h3 className="font-bold text-white">Ranked Substitute Recommendations</h3>
-            {isLoading ? (
-                <div className="flex justify-center items-center py-10 text-text-muted"><Loader2 className="animate-spin mr-2"/> Finding best candidates...</div>
-            ) : rankedSubstitutes.length === 0 ? (
-                 <div className="text-center py-10 text-text-muted">No available substitutes found for this slot.</div>
-            ) : (
-                rankedSubstitutes.map((sub, index) => {
-                    const facultyDetails = getFacultyDetails(sub.facultyId);
-                    if (!facultyDetails) return null;
+    return (
+        <Modal
+          isOpen={isOpen}
+          onClose={onClose}
+          title="AI-Powered Substitute Finder"
+          footer={footer}
+          className="max-w-xl"
+        >
+            <div className="space-y-4">
+                <div className="p-3 bg-panel-strong rounded-lg text-sm">
+                    <p><span className="font-semibold text-text-muted">Original Class:</span> <span className="text-white">{targetSubject?.name}</span></p>
+                    <p><span className="font-semibold text-text-muted">Original Teacher:</span> <span className="text-white">{targetFaculty?.name}</span></p>
+                </div>
 
-                    const isSelected = selectedSubstitute?.facultyId === sub.facultyId;
-                    
-                    const facultySubjects = sub.canTeachOriginalSubject
-                        ? [originalSubject].filter(Boolean) as Subject[]
-                        : sub.alternativeSubjectIds.map(id => getSubjectDetails(id)).filter(Boolean) as Subject[];
-
-                    return (
-                        <GlassPanel key={sub.facultyId} className={`p-4 cursor-pointer transition-all border-2 ${isSelected ? 'border-[var(--accent)] bg-[var(--accent)]/10' : 'border-transparent hover:border-white/20'}`}>
-                           <div onClick={() => handleSelectSubstitute(sub)}>
-                               <div className="flex justify-between items-start">
-                                    <div>
-                                        <p className="font-bold text-white">{facultyDetails.name}</p>
-                                        <p className="text-xs text-text-muted">Suitability Score: <span className="font-bold text-green-400">{sub.score}/100</span></p>
+                {isLoading ? (
+                    <div className="space-y-2">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                             <div key={i} className="flex items-center gap-4 p-3 border border-transparent rounded-lg">
+                                <Skeleton className="w-10 h-10 rounded-full" />
+                                <div className="flex-1 space-y-2">
+                                    <Skeleton className="h-4 w-3/4" />
+                                    <Skeleton className="h-3 w-1/2" />
+                                </div>
+                                <Skeleton className="w-12 h-6 rounded-md" />
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <>
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-2">
+                            {substitutes.length > 0 ? substitutes.map((sub, i) => (
+                                <div
+                                    key={sub.faculty.id}
+                                    onClick={() => setSelectedFacultyId(sub.faculty.id)}
+                                    className={cn(
+                                        'p-3 rounded-lg border transition-all cursor-pointer flex items-center gap-4',
+                                        selectedFacultyId === sub.faculty.id
+                                            ? 'bg-accent/20 border-accent/30'
+                                            : 'bg-panel/50 border-transparent hover:border-[var(--border)]'
+                                    )}
+                                >
+                                    <div className="w-10 h-10 rounded-full bg-accent/10 border border-accent/20 flex items-center justify-center font-bold text-accent shrink-0">
+                                        {sub.faculty.name.charAt(0)}
                                     </div>
-                                    {index === 0 && <span className="flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-yellow-500/10 text-yellow-400 font-semibold"><Award size={12}/> Top Pick</span>}
-                               </div>
-                               <div className="text-xs text-text-muted mt-2 space-y-1">
-                                {sub.reasons.map((reason, i) => (
-                                    <p key={i} className="flex items-start gap-2"><CheckCircle size={12} className="text-green-500 mt-0.5 shrink-0"/> {reason}</p>
-                                ))}
-                               </div>
-                           </div>
-                           {isSelected && (
-                               <div className="mt-4 pt-4 border-t border-[var(--border)] space-y-2">
-                                  <label className="text-sm font-semibold text-white block">What will be taught?</label>
-                                   {sub.canTeachOriginalSubject ? (
-                                        <div className="flex items-center gap-2 p-2 bg-panel-strong rounded-md text-sm">
-                                            <BookOpen size={16} className="text-[var(--accent)]"/>
-                                            <span>Covering: <span className="font-semibold">{originalSubject?.name}</span></span>
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-white">{sub.faculty.name}</p>
+                                        <div className="flex items-center gap-2 mt-1">
+                                            {sub.reasons.map((reason, idx) => (
+                                                <div key={idx} className="group relative flex items-center">
+                                                    <ReasonIcon reason={reason} />
+                                                    <span className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2 py-1 text-xs text-white bg-panel-strong rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10 border border-[var(--border)] shadow-lg">
+                                                        {reason}
+                                                    </span>
+                                                </div>
+                                            ))}
                                         </div>
-                                   ) : (
-                                       <GlassSelect
-                                            value={selectedSubstitute?.subjectId || ''}
-                                            onChange={handleSubjectChange}
-                                            options={facultySubjects.map(s => ({ value: s.id, label: s.name }))}
-                                       />
-                                   )}
-                               </div>
-                           )}
-                        </GlassPanel>
-                    )
-                })
-            )}
-        </div>
-      </div>
-    </Modal>
-  );
+                                    </div>
+                                    <div className="text-right">
+                                        <div className="flex items-center gap-1.5 text-yellow-400">
+                                            <Sparkles size={14} />
+                                            <span className="font-bold text-lg">{sub.score}</span>
+                                        </div>
+                                        <p className="text-xs text-text-muted -mt-1">AI Score</p>
+                                    </div>
+                                </div>
+                            )) : (
+                                <p className="text-center text-sm text-text-muted py-8">No suitable substitutes found.</p>
+                            )}
+                        </div>
+
+                        {selectedSubstitute && (
+                             <GlassSelect
+                                placeholder="Select subject to teach..."
+                                value={selectedSubjectId}
+                                onChange={(val) => setSelectedSubjectId(String(val))}
+                                options={selectedSubstitute.suitableSubjects.map(s => ({ value: s.id, label: `${s.code} - ${s.name}` }))}
+                            />
+                        )}
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm text-text-muted mb-1 block">Start Date</label>
+                                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="glass-input w-full"/>
+                            </div>
+                             <div>
+                                <label className="text-sm text-text-muted mb-1 block">End Date</label>
+                                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="glass-input w-full"/>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
+        </Modal>
+    );
 };

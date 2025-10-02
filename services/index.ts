@@ -13,9 +13,13 @@ export const {
     getUsers,
     getTimetables,
     getConstraints,
-    getFacultyAllocations, // NEW: Export the new service
+    getFacultyAllocations,
     getSettings,
     runScheduler,
+    runDiagnostics,
+    applyNLC,
+    compareTimetables,
+    getAnalyticsReport,
     saveTimetable,
     updateTimetable,
     saveTimetableFeedback,
@@ -41,5 +45,5 @@ export const {
     saveGlobalConstraints,
     saveTimetableSettings,
     resetData,
-    importDataManagementData, // NEW
+    importDataManagementData,
 } = realApi;
