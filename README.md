@@ -32,7 +32,6 @@ AetherSchedule is a complete ecosystem designed to address the entire scheduling
 - **Context-Aware Candidate Pooling:** The pool of potential substitutes is intelligently restricted to teachers already allocated to that specific batch, ensuring substitutes are familiar with the student group and curriculum.
 
 ### 🔒 Granular & AI-Assisted Constraint Management
-- **AI-Assisted Constraint Builder:** Describe a complex scheduling rule in plain English (e.g., "No faculty should teach for more than 3 consecutive hours"), and Gemini will help formalize it into a structured constraint the system can enforce.
 - **Faculty Availability Matrix:** A simple, visual point-and-click matrix to define preferred and unavailable time slots for each faculty member.
 - **Pinned Assignments & Planned Leaves:** Lock in mandatory, non-negotiable events or block out dates for faculty holidays to ensure the AI respects all real-world constraints.
 - **Multi-Teacher Lab Assignments:** Accurately models real-world scenarios by allowing the assignment of two or more teachers to a single lab or practical session.
@@ -50,10 +49,25 @@ AetherSchedule is a complete ecosystem designed to address the entire scheduling
 
 ---
 
+## 📖 Project Documentation
+
+This repository contains a dedicated `/documentation` directory with detailed, plain-text files explaining every aspect of the application. This is the best place to start for a deep understanding of the project.
+
+- **01-Project_Setup.txt**: How to set up and run the project locally.
+- **02-Frontend_Architecture.txt**: An overview of the React component structure, state management, and styling.
+- **03-Backend_API.txt**: A guide to the Hono API, including routing and database interaction.
+- **04-Database_Schema.txt**: Detailed explanation of the Drizzle ORM schema and table relationships.
+- **05-Core_Scheduler_Engine.txt**: A deep dive into the genetic algorithm and optimization logic.
+- **06-AI_Integration_Gemini.txt**: Explains the "Three-Level" Gemini strategy and other AI features.
+- **07-Key_Features_Walkthrough.txt**: A user-centric guide to the main workflows of the application.
+
+---
+
 ## 🛠️ Tech Stack
 
 - **Frontend:** React, TypeScript, Tailwind CSS
-- **Backend/API:** Hono on Vercel Edge Functions
+- **State Management:** TanStack Query (for server state), React Context (for global UI state)
+- **Backend/API:** Hono on Node.js (local) / Vercel Edge (deployment)
 - **Database:** Neon (Serverless Postgres) with Drizzle ORM
 - **AI:** Google Gemini API
 - **Deployment:** Vercel
@@ -70,7 +84,7 @@ AetherSchedule is a complete ecosystem designed to address the entire scheduling
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/om-prakash-verma/aetherschedule.git
+git clone https://github.com/your-username/aetherschedule.git
 cd aetherschedule
 ```
 
@@ -89,7 +103,8 @@ cp .env.example .env
 Now, open the `.env` file and add your credentials:
 
 ```env
-# Get this from your Neon database project settings (use the non-pooling connection string)
+# Get this from your Neon database project settings.
+# IMPORTANT: Use the non-pooling, standard connection string for Drizzle Kit compatibility.
 POSTGRES_URL="postgres://user:password@host/dbname"
 
 # Get this from Google AI Studio
@@ -97,7 +112,7 @@ API_KEY="your_gemini_api_key_here"
 ```
 
 ### 4. Run the Development Server
-This single command handles everything. It will first **synchronize your database schema** and then concurrently start the Hono API backend and the Vite frontend development server.
+This single command handles everything. It will first **synchronize your database schema**, **seed it with demo data** (if empty), and then concurrently start the Hono API backend and the Vite frontend development server.
 
 ```bash
 npm run dev
@@ -109,7 +124,7 @@ npm run dev
 The application should now be running locally! The first time you access the app, it will automatically seed the database with initial demo data.
 
 ---
-**Note on Manual Database Pushing:** The `npm run dev` script now handles pushing the schema automatically. If you ever need to do it manually (e.g., after changing the schema while the dev server is running), you can use the following command in a separate terminal:
+**Note on Manual Database Pushing:** The `npm run dev` script handles pushing the schema automatically on startup. If you ever need to sync schema changes *while the dev server is already running*, you can use the following command in a separate terminal:
 ```bash
 npm run db:push
 ```
@@ -121,24 +136,27 @@ npm run db:push
 ```
 .
 ├── api/                  # Hono backend server
-│   ├── index.ts          # Vercel entrypoint
+│   ├── index.ts          # Vercel deployment entrypoint
 │   └── server.ts         # Main Hono app, routes, and logic
-├── db/                   # Database schema
+├── core/                 # Core business logic (scheduling, analytics)
+│   ├── engine/           # Modular components of the scheduler engine
+│   ├── analyticsEngine.ts
+│   ├── conflictChecker.ts
+│   └── schedulerEngine.ts # High-level orchestrator for the GA
+├── db/                   # Database schema and client
 │   └── schema.ts         # Drizzle ORM schema definitions
+├── documentation/        # Detailed project documentation files
 ├── drizzle/              # Drizzle-Kit migration output
 ├── public/               # Static assets
 ├── src/                  # React frontend application
 │   ├── components/       # Reusable UI components
-│   ├── constants.ts      # App-wide constants
 │   ├── context/          # React Context for global state
-│   ├── core/             # Core business logic (scheduling, analytics engines)
 │   ├── hooks/            # Custom React hooks
 │   ├── pages/            # Page-level components
 │   ├── services/         # API service layer (data fetching)
-│   ├── types.ts          # TypeScript type definitions
+│   ├── types.ts          # Global TypeScript type definitions
 │   └── index.tsx         # React app entry point
 ├── .env                  # Local environment variables (ignored by git)
-├── drizzle.config.ts     # Drizzle Kit configuration
 ├── package.json
 └── vite.config.ts        # Vite configuration
 ```
