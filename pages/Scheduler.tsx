@@ -1,3 +1,5 @@
+
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
@@ -7,16 +9,17 @@ import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import { useUndoRedo } from '../hooks/useUndoRedo';
 import * as api from '../services';
-import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid, Substitution } from '../types';
-import { Zap, Save, Printer, Calendar, Send, Check, X, Loader2, ChevronDown, Bot, Undo2, Redo2 } from 'lucide-react';
+import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid, Substitution, ValidationContext } from '../types';
+import { Zap, Save, Printer, Calendar, Send, Check, X, Loader2, ChevronDown, Bot, Undo2, Redo2, Trash2 } from 'lucide-react';
 import { TimetableView } from '../components/TimetableView';
 import { exportTimetableToPdf, exportTimetableToIcs } from '../utils/export';
-import { checkConflicts } from '../core/conflictChecker';
+import { ConflictChecker } from '../core/conflictChecker';
 import { AIEngineConsole } from '../components/AIEngineConsole';
 import { AICommandBar } from '../components/AICommandBar';
 import { AIComparisonModal } from '../components/AIComparisonModal';
 import { cn } from '../utils/cn';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useConfirm } from '../hooks/useConfirm';
 
 const statusColors: Record<GeneratedTimetable['status'], string> = {
     Draft: 'bg-yellow-500/10 text-yellow-500',
@@ -112,6 +115,8 @@ const Scheduler: React.FC = () => {
     const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
     
     const toast = useToast();
+    const confirm = useConfirm();
+    const queryClient = useQueryClient();
     
     const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
     const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: api.getDepartments });
@@ -119,7 +124,35 @@ const Scheduler: React.FC = () => {
     const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
     const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
     const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
-    const { data: constraints = { substitutions: [] } } = useQuery({ queryKey: ['constraints'], queryFn: api.getConstraints });
+    const { data: constraints } = useQuery({ queryKey: ['constraints'], queryFn: api.getConstraints, initialData: { substitutions: [], pinnedAssignments: [], plannedLeaves: [], facultyAvailability: [] }});
+    const { data: facultyAllocations = [] } = useQuery({ queryKey: ['facultyAllocations'], queryFn: api.getFacultyAllocations });
+    const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
+
+
+    const deleteTimetableMutation = useMutation({
+        mutationFn: (id: string) => api.deleteTimetable(id),
+        onSuccess: (data, deletedId) => {
+            queryClient.invalidateQueries({ queryKey: ['timetables'] });
+            toast.success("Timetable version deleted.");
+            if (selectedVersionId === deletedId) {
+                setSelectedVersionId(null);
+                setViewedCandidate(null);
+            }
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || 'Failed to delete timetable.');
+        }
+    });
+
+    const handleDeleteVersion = async (version: GeneratedTimetable) => {
+        const confirmed = await confirm({
+            title: `Delete Version ${version.version}`,
+            description: `Are you sure you want to permanently delete this timetable version (${version.status})? This action cannot be undone.`
+        });
+        if (confirmed) {
+            deleteTimetableMutation.mutate(version.id);
+        }
+    };
 
     const batchOptions = useMemo(() => {
         return departments.map(dept => ({
@@ -142,33 +175,52 @@ const Scheduler: React.FC = () => {
         return viewedCandidate;
     }, [generatedTimetables, selectedVersionId, viewedCandidate]);
 
-    const calculateConflicts = useCallback((grid: TimetableGrid | undefined, currentTimetableId: string) => {
-        if (!grid) return new Map();
-        
+    const calculateConflicts = useCallback((grid: TimetableGrid | undefined) => {
+        if (!grid || !settings?.timetableSettings) return new Map();
+
         const draftAssignments = flattenTimetable(grid);
         
-        const approvedAssignments = generatedTimetables
-            .filter(tt => tt.status === 'Approved' && tt.id !== currentTimetableId)
-            .flatMap(tt => flattenTimetable(tt.timetable));
-            
-        const substitutionAssignments: ClassAssignment[] = (constraints.substitutions || []).map(sub => ({
-            id: sub.id,
-            subjectId: sub.substituteSubjectId,
-            facultyIds: [sub.substituteFacultyId],
-            roomId: sub.roomId, // Use roomId from the self-contained substitution record
-            batchId: sub.batchId,
-            day: sub.day,
-            slot: sub.slot,
-        }));
-            
-        return checkConflicts(draftAssignments, faculty, rooms, subjects, batches, [...approvedAssignments, ...substitutionAssignments]);
-    }, [generatedTimetables, faculty, rooms, subjects, batches, constraints.substitutions]);
+        // Exclude approved timetables for the batches currently being scheduled.
+        const otherApprovedTimetables = generatedTimetables.filter(tt => 
+            tt.status === 'Approved' && !tt.batchIds.some(bId => selectedBatchIds.includes(bId))
+        );
+
+        // Build a combined grid representing the full world state for validation.
+        const combinedGrid: TimetableGrid = JSON.parse(JSON.stringify(grid));
+        otherApprovedTimetables.forEach(tt => {
+            for (const batchId in tt.timetable) {
+                if (!combinedGrid[batchId]) {
+                    combinedGrid[batchId] = tt.timetable[batchId];
+                }
+            }
+        });
+
+        const validationContext: ValidationContext = {
+            subjects, faculty, rooms, batches, constraints, facultyAllocations,
+            timetableSettings: settings.timetableSettings,
+        };
+
+        const checker = new ConflictChecker(validationContext);
+        const allConflicts = checker.check(combinedGrid);
+        
+        // Filter the results to only include conflicts from the draft assignments.
+        const draftConflictMap = new Map<string, Conflict[]>();
+        const draftAssignmentIds = new Set(draftAssignments.map(a => a.id));
+
+        for (const [assignmentId, conflicts] of allConflicts.entries()) {
+            if (draftAssignmentIds.has(assignmentId)) {
+                draftConflictMap.set(assignmentId, conflicts);
+            }
+        }
+        
+        return draftConflictMap;
+    }, [generatedTimetables, faculty, rooms, subjects, batches, constraints, facultyAllocations, settings, selectedBatchIds]);
     
     useEffect(() => {
         if (selectedTimetableToView) {
-            // Reset the history with the new timetable
-            resetEditedTimetable(JSON.parse(JSON.stringify(selectedTimetableToView)));
-            setConflictMap(calculateConflicts(selectedTimetableToView.timetable, selectedTimetableToView.id));
+            const newTimetable = JSON.parse(JSON.stringify(selectedTimetableToView));
+            resetEditedTimetable(newTimetable);
+            setConflictMap(calculateConflicts(newTimetable.timetable));
         } else {
             resetEditedTimetable(null);
             setConflictMap(new Map());
@@ -205,34 +257,33 @@ const Scheduler: React.FC = () => {
             changedAssignmentIds = [assignment1.id, assignment2.id];
         }
 
-        const newConflictMap = calculateConflicts(newGrid, editedTimetable.id);
+        const newConflictMap = calculateConflicts(newGrid);
         
-        // Check for new conflicts on the items that were just moved and notify the user
-        for (const id of changedAssignmentIds) {
-            const assignmentConflicts = newConflictMap.get(id);
-            if (assignmentConflicts && assignmentConflicts.length > 0) {
-                toast.error(assignmentConflicts[0].message);
-                break; // Show one toast at a time
-            }
-        }
-        
-        // Push the new state to the undo/redo history
-        setEditedTimetable({ ...editedTimetable, timetable: newGrid });
+        const newTimetableState = { ...editedTimetable, timetable: newGrid };
+        setEditedTimetable(newTimetableState);
         setConflictMap(newConflictMap);
+
+        const newConflicts = flattenTimetable(newGrid)
+            .filter(a => changedAssignmentIds.includes(a.id))
+            .flatMap(a => newConflictMap.get(a.id) || []);
+
+        if (newConflicts.length > 0) {
+            toast.error(newConflicts[0].message);
+        }
+
     }, [editedTimetable, calculateConflicts, toast, setEditedTimetable]);
 
     const handleUpdateDraft = useCallback(async () => {
         if (!editedTimetable || !canUndo) return;
         try {
             await api.updateTimetable(editedTimetable);
-            await refreshData();
-            // After saving, reset the history to make the current state the new baseline
+            await queryClient.invalidateQueries({ queryKey: ['timetables'] });
             resetEditedTimetable(editedTimetable);
             toast.success('Draft updated successfully.');
         } catch (error: any) {
             toast.error(error.message || 'Failed to update draft.');
         }
-    }, [editedTimetable, canUndo, refreshData, toast, resetEditedTimetable]);
+    }, [editedTimetable, canUndo, queryClient, toast, resetEditedTimetable]);
 
     const handleBatchChange = (ids: string[]) => {
         setSelectedBatchIds(ids);
@@ -303,7 +354,7 @@ const Scheduler: React.FC = () => {
 
         try {
             await api.saveTimetable(newTimetable);
-            await refreshData();
+            await queryClient.invalidateQueries({ queryKey: ['timetables'] });
             setCandidates([]);
             setSelectedVersionId(newTimetable.id);
             setViewedCandidate(null);
@@ -311,19 +362,19 @@ const Scheduler: React.FC = () => {
         } catch (error: any) {
             toast.error(error.message || 'Failed to save draft.');
         }
-    }, [savedVersions, selectedBatchIds, refreshData, toast]);
+    }, [savedVersions, selectedBatchIds, queryClient, toast]);
     
     const handleUpdateStatus = useCallback(async (status: GeneratedTimetable['status']) => {
         if (!selectedTimetableToView) return;
         try {
             const updatedTimetable = { ...selectedTimetableToView, status };
             await api.updateTimetable(updatedTimetable);
-            await refreshData();
+            await queryClient.invalidateQueries({ queryKey: ['timetables'] });
             toast.success(`Timetable status updated to ${status}.`);
         } catch (error: any) {
             toast.error(error.message || 'Failed to update status.');
         }
-    }, [selectedTimetableToView, refreshData, toast]);
+    }, [selectedTimetableToView, queryClient, toast]);
 
     const handleAddComment = useCallback(async () => {
         if (!comment.trim() || !selectedTimetableToView || !user) return;
@@ -339,13 +390,13 @@ const Scheduler: React.FC = () => {
                 comments: [...(selectedTimetableToView.comments || []), newComment],
             };
             await api.updateTimetable(updatedTimetable);
-            await refreshData();
+            await queryClient.invalidateQueries({ queryKey: ['timetables'] });
             setComment('');
             toast.success('Comment added.');
         } catch (error: any) {
             toast.error(error.message || 'Failed to add comment.');
         }
-    }, [comment, selectedTimetableToView, user, refreshData, toast]);
+    }, [comment, selectedTimetableToView, user, queryClient, toast]);
     
     const handleFindSubstitute = (assignment: ClassAssignment) => {
         setSubstituteTarget(assignment);
@@ -360,7 +411,7 @@ const Scheduler: React.FC = () => {
                 createdAt: new Date().toISOString(),
             };
             await api.createSubstitution(newSub);
-            await refreshData();
+            await queryClient.invalidateQueries({ queryKey: ['constraints'] });
             toast.success("Substitution created successfully.");
             setIsSubstituteModalOpen(false);
             setSubstituteTarget(null);
@@ -385,8 +436,9 @@ const Scheduler: React.FC = () => {
 
     const confirmAISuggestion = () => {
         if (aiSuggestedTimetable && editedTimetable) {
-            setEditedTimetable({ ...editedTimetable, timetable: aiSuggestedTimetable });
-            setConflictMap(calculateConflicts(aiSuggestedTimetable, editedTimetable.id));
+            const newTimetableState = { ...editedTimetable, timetable: aiSuggestedTimetable };
+            setEditedTimetable(newTimetableState);
+            setConflictMap(calculateConflicts(aiSuggestedTimetable));
             setAISuggestedTimetable(null);
             toast.success("AI change applied.");
         }
@@ -529,14 +581,32 @@ const Scheduler: React.FC = () => {
                         <h2 className="text-lg font-bold mb-4">Saved Versions</h2>
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                             {selectedBatchIds.length > 0 && savedVersions.length > 0 ? savedVersions.map(v => (
-                                <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setViewedCandidate(null); }} 
-                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-panel-strong border-transparent hover:border-[var(--border)] hover:bg-panel'}`}>
-                                    <div className="flex justify-between items-center">
-                                        <p className="font-semibold text-white">Version {v.version}</p>
-                                        <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
-                                    </div>
-                                    <p className="text-xs text-text-muted mt-1">Created: {new Date(v.createdAt).toLocaleDateString()}</p>
-                                </button>
+                                <div key={v.id} className="flex items-center gap-2">
+                                    <button 
+                                        onClick={() => { setSelectedVersionId(v.id); setViewedCandidate(null); }}
+                                        className={cn(
+                                            'flex-1 text-left p-3 rounded-lg border transition-colors', 
+                                            selectedVersionId === v.id ? 'bg-accent/20 border-accent/30' : 'bg-panel-strong border-transparent hover:border-[var(--border)] hover:bg-panel'
+                                        )}
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            <p className="font-semibold text-white">Version {v.version}</p>
+                                            <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
+                                        </div>
+                                        <p className="text-xs text-text-muted mt-1">Created: {new Date(v.createdAt).toLocaleDateString()}</p>
+                                    </button>
+                                    {(v.status === 'Approved' || v.status === 'Rejected' || v.status === 'Archived') && (
+                                        <GlassButton
+                                            variant="secondary"
+                                            className="p-2 aspect-square !border-danger/30 !bg-danger/10 text-danger/80 hover:!bg-danger/20 hover:!text-danger"
+                                            title="Delete this version"
+                                            onClick={() => handleDeleteVersion(v)}
+                                            disabled={deleteTimetableMutation.isPending}
+                                        >
+                                            <Trash2 size={14} />
+                                        </GlassButton>
+                                    )}
+                                </div>
                             )) : (
                                 <p className="text-sm text-text-muted text-center py-4">
                                     {selectedBatchIds.length > 0 ? 'No saved versions for this combination of batches.' : 'Select batches to see saved versions.'}
@@ -599,7 +669,7 @@ const Scheduler: React.FC = () => {
                                                     timetableData={singleBatchTimetable}
                                                     isEditable={editedTimetable.status === 'Draft'}
                                                     onDropAssignment={handleDropAssignment}
-                                                    onFindSubstitute={handleFindSubstitute}
+                                                    onFindSubstitute={editedTimetable.status === 'Approved' ? handleFindSubstitute : undefined}
                                                     conflictMap={conflictMap}
                                                     substitutions={constraints.substitutions}
                                                 />

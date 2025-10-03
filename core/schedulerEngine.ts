@@ -1,12 +1,31 @@
-
-
+// FIX: Corrected typo 'SingleBatch_TimetableGrid' to 'SingleBatchTimetableGrid' in type import.
 import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid, TimetableSettings, PinnedAssignment, FacultyAllocation, DiagnosticIssue } from '../types';
 import { isFacultyAvailable, isRoomAvailable, isBatchAvailable } from './conflictChecker';
-import { GoogleGenAI, Type, type GenerateContentResponse } from "@google/genai";
+// FIX: Import GenerateContentResponse to strongly type the API response.
+import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { generateTimeSlots } from '../utils/time';
 
 // --- GEMINI API INITIALIZATION ---
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+
+// Helper function to retry Gemini API calls on overload errors.
+async function callGeminiWithRetry<T>(
+    apiCall: () => Promise<T>,
+    options: { retries?: number; delayMs?: number } = {}
+): Promise<T> {
+  const { retries = 2, delayMs = 2000 } = options;
+  try {
+    return await apiCall();
+  } catch (error: any) {
+    const isOverloaded = error.status === 503 || (error.message && error.message.toLowerCase().includes('overloaded'));
+    if (retries > 0 && isOverloaded) {
+      console.warn(`Gemini API overloaded. Retrying in ${delayMs / 1000}s... (${retries} retries left)`);
+      await new Promise(res => setTimeout(res, delayMs));
+      return callGeminiWithRetry(apiCall, { retries: retries - 1, delayMs: delayMs * 2 });
+    }
+    throw error;
+  }
+}
 
 interface SchedulerInput {
   batches: Batch[];
@@ -18,6 +37,7 @@ interface SchedulerInput {
   facultyAllocations: FacultyAllocation[];
   globalConstraints: GlobalConstraints;
   days: string[];
+  workingDaysIndices: number[];
   timetableSettings: TimetableSettings,
   candidateCount: number;
   // FIX: Added optional baseTimetable property to satisfy the API call.
@@ -26,10 +46,10 @@ interface SchedulerInput {
 
 // --- ALGORITHM CONFIGURATION ---
 const POPULATION_SIZE = 20;
-const MAX_GENERATIONS = 25;
+const MAX_GENERATIONS = 20;
 const ELITISM_COUNT = 2;
 const TOURNAMENT_SIZE = 5;
-const STAGNATION_LIMIT_FOR_EXIT = 10;
+const STAGNATION_LIMIT_FOR_EXIT = 8;
 const STAGNATION_LIMIT_FOR_INTERVENTION = 5;
 const PERFECT_SCORE_THRESHOLD = 990;
 
@@ -49,6 +69,13 @@ const flattenTimetable = (timetable: TimetableGrid): ClassAssignment[] => {
         Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
     );
 };
+
+// --- NEW: Helper to check if an assignment is pinned ---
+const isAssignmentPinned = (assignment: ClassAssignment, pinnedLocations: Set<string>): boolean => {
+    const key = `${assignment.day}-${assignment.slot}-${assignment.batchId}`;
+    return pinnedLocations.has(key);
+};
+
 
 // --- FITNESS FUNCTION (UPGRADED for multi-teacher classes) ---
 const calculateMetrics = (timetable: TimetableGrid, batches: Batch[], allFaculty: Faculty[], globalConstraints: GlobalConstraints): TimetableMetrics => {
@@ -230,7 +257,8 @@ export const tuneConstraintWeightsWithGemini = async (
             Do not change weights drastically. Make subtle adjustments.
         `;
         
-        const response = await ai.models.generateContent({
+        // FIX: Explicitly type the response from the Gemini API call to resolve the 'unknown' type error.
+        const response: GenerateContentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -245,7 +273,7 @@ export const tuneConstraintWeightsWithGemini = async (
                     },
                 },
             },
-        });
+        }), { retries: 2, delayMs: 2000 });
 
         const tunedWeights = JSON.parse(response.text);
 
@@ -310,7 +338,8 @@ const getGeminiPhaseStrategy = async (problemSummary: {
             Provide the response as a JSON array of phase objects.
         `;
 
-        const response = await ai.models.generateContent({
+        // FIX: Explicitly type the response from the Gemini API call to resolve the 'unknown' type error.
+        const response: GenerateContentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -336,7 +365,7 @@ const getGeminiPhaseStrategy = async (problemSummary: {
                     }
                 },
             },
-        });
+        }), { retries: 2, delayMs: 1000 });
 
         const strategy = JSON.parse(response.text);
         console.log('Gemini generated strategy:', strategy);
@@ -398,13 +427,13 @@ const geminiCreativeIntervention = async (
             Provide your response as a JSON object containing the IDs of the two classes to swap, with keys "classId1" and "classId2".
         `;
 
-        const INTERVENTION_TIMEOUT_MS = 15000; // 15 seconds
+        const INTERVENTION_TIMEOUT_MS = 10000; // 10 seconds
 
         const timeoutPromise = new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`Gemini intervention timed out after ${INTERVENTION_TIMEOUT_MS}ms`)), INTERVENTION_TIMEOUT_MS)
         );
 
-        const geminiPromise = ai.models.generateContent({
+        const geminiCall = () => ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
@@ -419,8 +448,10 @@ const geminiCreativeIntervention = async (
                 },
             },
         });
+        
+        const geminiPromiseWithRetry = callGeminiWithRetry(geminiCall, { retries: 1, delayMs: 500 });
 
-        const response = await Promise.race([geminiPromise, timeoutPromise]) as GenerateContentResponse;
+        const response = await Promise.race([geminiPromiseWithRetry, timeoutPromise]) as GenerateContentResponse;
         
         const { classId1, classId2 } = JSON.parse(response.text);
 
@@ -510,13 +541,14 @@ export const applyNaturalLanguageCommand = async (
     `;
 
     try {
-        const response = await ai.models.generateContent({
+        // FIX: Explicitly type the response from the Gemini API call to resolve the 'unknown' type error.
+        const response: GenerateContentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
             },
-        });
+        }), { retries: 2, delayMs: 1000 });
 
         const parsed = JSON.parse(response.text);
         const newTimetable = JSON.parse(JSON.stringify(timetable));
@@ -584,9 +616,23 @@ export const applyNaturalLanguageCommand = async (
  */
 export const runOptimization = async (input: SchedulerInput): Promise<{ timetable: TimetableGrid, metrics: TimetableMetrics }[]> => {
     // FIX: Destructure baseTimetable from the input object.
-    const { batches, allSubjects, allFaculty, allRooms, constraints, globalConstraints, days, timetableSettings, candidateCount, facultyAllocations, baseTimetable } = input;
+    const { batches, allSubjects, allFaculty, allRooms, constraints, globalConstraints, days, workingDaysIndices, timetableSettings, candidateCount, facultyAllocations, baseTimetable } = input;
     const timeSlots = generateTimeSlots(timetableSettings);
     const numSlots = timeSlots.length;
+
+    // NEW: Create a lookup set for pinned locations for efficient checking.
+    const pinnedLocations = new Set<string>();
+    (constraints.pinnedAssignments || []).forEach(pin => {
+        pin.days.forEach(day => {
+            pin.startSlots.forEach(startSlot => {
+                for (let j = 0; j < pin.duration; j++) {
+                    const slot = startSlot + j;
+                    const key = `${day}-${slot}-${pin.batchId}`;
+                    pinnedLocations.add(key);
+                }
+            });
+        });
+    });
 
     const classesToSchedule = batches.flatMap(batch =>
         batch.subjectIds.flatMap(subjectId => {
@@ -603,7 +649,7 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
     };
     const strategy = await getGeminiPhaseStrategy(problemSummary);
     // FIX: Pass baseTimetable to the population initialization function.
-    let population = initializePopulation(POPULATION_SIZE, classesToSchedule, batches, allSubjects, allFaculty, allRooms, constraints, facultyAllocations, days, numSlots, baseTimetable);
+    let population = initializePopulation(POPULATION_SIZE, classesToSchedule, batches, allSubjects, allFaculty, allRooms, constraints, facultyAllocations, workingDaysIndices, numSlots, baseTimetable);
     let bestScores: number[] = [];
 
     for (const phase of strategy) {
@@ -670,17 +716,16 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
                          offspring = dayWiseCrossover(offspring, parent2);
                          break;
                     case LowLevelHeuristic.SWAP_MUTATE:
-                         offspring = swapMutate(offspring, 0.1);
+                         offspring = swapMutate(offspring, 0.1, pinnedLocations);
                          break;
                     case LowLevelHeuristic.MOVE_MUTATE:
-                         offspring = moveMutate(offspring, 0.1, batches, allSubjects, allFaculty, allRooms, constraints, days, numSlots);
+                         offspring = moveMutate(offspring, 0.1, batches, allSubjects, allFaculty, allRooms, constraints, workingDaysIndices, numSlots, pinnedLocations);
                          break;
                     case LowLevelHeuristic.SIMULATED_ANNEALING:
-                         offspring = simulatedAnnealing(offspring, batches, allFaculty, globalConstraints);
+                         offspring = simulatedAnnealing(offspring, batches, allFaculty, globalConstraints, pinnedLocations);
                          break;
                 }
-                
-                greedyRepair(offspring, batches, allSubjects, allFaculty, allRooms, constraints, days, numSlots, facultyAllocations);
+                greedyRepair(offspring, batches, allSubjects, allFaculty, allRooms, constraints, workingDaysIndices, numSlots, facultyAllocations, pinnedLocations);
                 newPopulation.push(offspring);
             }
             population = newPopulation;
@@ -711,6 +756,8 @@ export const runOptimization = async (input: SchedulerInput): Promise<{ timetabl
 };
 
 // --- INITIALIZATION ---
+// FIX: The population initializer now correctly accounts for pinned assignments,
+// placing them first and scheduling the remaining classes around them.
 const initializePopulation = (
     size: number,
     classes: { batchId: string, subjectId: string }[],
@@ -720,14 +767,12 @@ const initializePopulation = (
     allRooms: Room[],
     constraints: Constraints,
     facultyAllocations: FacultyAllocation[],
-    days: string[],
+    workingDaysIndices: number[],
     numSlots: number,
-    // FIX: Accept optional baseTimetable.
     baseTimetable?: TimetableGrid
 ): { timetable: TimetableGrid, metrics: TimetableMetrics }[] => {
     let population = [];
     for (let i = 0; i < size; i++) {
-        // FIX: If this is the first individual and a baseTimetable is provided, use it.
         if (i === 0 && baseTimetable) {
             population.push({ timetable: baseTimetable, metrics: { score: 0, hardConflicts: 0, studentGaps: 0, facultyGaps: 0, facultyWorkloadDistribution: 0, preferenceViolations: 0 } });
             continue;
@@ -736,13 +781,20 @@ const initializePopulation = (
         let timetable: TimetableGrid = {};
         batches.forEach(b => {
             timetable[b.id] = {};
-            for (let d = 0; d < days.length; d++) {
-                timetable[b.id][d] = {};
+            for (const dayIndex of workingDaysIndices) {
+                timetable[b.id][dayIndex] = {};
             }
         });
 
-        // Apply pinned assignments first
-        constraints.pinnedAssignments.forEach(pin => {
+        // 1. Create a mutable tally of required classes
+        const requiredClassesTally: { [key: string]: number } = {};
+        classes.forEach(c => {
+            const key = `${c.batchId}-${c.subjectId}`;
+            requiredClassesTally[key] = (requiredClassesTally[key] || 0) + 1;
+        });
+
+        // 2. Apply pinned assignments first and decrement from the tally
+        (constraints.pinnedAssignments || []).forEach(pin => {
             if (!timetable[pin.batchId]) timetable[pin.batchId] = {};
             pin.days.forEach(day => {
                 if (!timetable[pin.batchId][day]) timetable[pin.batchId][day] = {};
@@ -753,40 +805,62 @@ const initializePopulation = (
                             timetable[pin.batchId][day][slot] = {
                                 id: generateId(),
                                 subjectId: pin.subjectId,
-                                // UPGRADE: Now an array to support multi-teacher classes
-                                facultyIds: [pin.facultyId],
+                                facultyIds: [pin.facultyId], // Pinned assignments are single-faculty
                                 roomId: pin.roomId,
                                 batchId: pin.batchId,
                                 day, slot,
                             };
+                            
+                            // Decrement from the tally
+                            const key = `${pin.batchId}-${pin.subjectId}`;
+                            if (requiredClassesTally[key] > 0) {
+                                requiredClassesTally[key]--;
+                            }
                         }
                     }
                 });
             });
         });
 
-        const unplacedClasses = [...classes];
-        let attempts = 0;
-        const maxAttempts = unplacedClasses.length * numSlots * days.length;
+        // 3. Create the list of classes to be placed randomly from the remaining tally.
+        const unplacedClasses: { batchId: string, subjectId: string }[] = [];
+        for (const key in requiredClassesTally) {
+            const count = requiredClassesTally[key];
+            if (count > 0) {
+                const [batchId, subjectId] = key.split(/-(.+)/s); // Split only on the first hyphen
+                for (let j = 0; j < count; j++) {
+                    unplacedClasses.push({ batchId, subjectId });
+                }
+            }
+        }
+        
+        // Shuffle for randomness
+        for (let j = unplacedClasses.length - 1; j > 0; j--) {
+            const k = Math.floor(Math.random() * (j + 1));
+            [unplacedClasses[j], unplacedClasses[k]] = [unplacedClasses[k], unplacedClasses[j]];
+        }
 
-        while (unplacedClasses.length > 0 && attempts < maxAttempts) {
+        // 4. Place remaining classes
+        const classesToPlaceRandomly = [...unplacedClasses];
+        let attempts = 0;
+        const maxAttempts = classesToPlaceRandomly.length * numSlots * workingDaysIndices.length;
+
+        while (classesToPlaceRandomly.length > 0 && attempts < maxAttempts) {
             attempts++;
-            const classToPlace = unplacedClasses.shift()!;
+            const classToPlace = classesToPlaceRandomly.shift()!;
             const batch = batches.find(b => b.id === classToPlace.batchId)!;
             const subject = allSubjects.find(s => s.id === classToPlace.subjectId)!;
 
-            const day = Math.floor(Math.random() * days.length);
+            const day = workingDaysIndices[Math.floor(Math.random() * workingDaysIndices.length)];
             const slot = Math.floor(Math.random() * numSlots);
             
-            // Try to find a valid placement
             if (!isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) {
-                unplacedClasses.push(classToPlace); continue;
+                classesToPlaceRandomly.push(classToPlace); continue;
             }
             
-            // UPGRADE: Find multiple faculty for labs/practicals
             const facultyCandidates = findFacultyForClass(batch.id, subject.id, allFaculty, facultyAllocations);
             if (facultyCandidates.length === 0) {
-                 unplacedClasses.push(classToPlace); continue;
+                 classesToPlaceRandomly.push(classToPlace); continue;
             }
             
             const requiredFacultyCount = subject.type === 'Practical' ? 2 : 1;
@@ -799,12 +873,12 @@ const initializePopulation = (
             }
 
             if (selectedFaculty.length < requiredFacultyCount) {
-                 unplacedClasses.push(classToPlace); continue;
+                 classesToPlaceRandomly.push(classToPlace); continue;
             }
 
             const room = findRoomForClass(batch, subject, day, slot, allRooms, flattenTimetable(timetable));
             if (!room) {
-                 unplacedClasses.push(classToPlace); continue;
+                 classesToPlaceRandomly.push(classToPlace); continue;
             }
 
             if (!timetable[batch.id][day]) timetable[batch.id][day] = {};
@@ -854,13 +928,19 @@ const dayWiseCrossover = (parent1: { timetable: TimetableGrid }, parent2: { time
 };
 
 
-const swapMutate = (individual: { timetable: TimetableGrid }, mutationRate: number) => {
+const swapMutate = (individual: { timetable: TimetableGrid }, mutationRate: number, pinnedLocations: Set<string>) => {
     if (Math.random() > mutationRate) return individual;
     const timetable = JSON.parse(JSON.stringify(individual.timetable));
     const assignments = flattenTimetable(timetable);
     if (assignments.length < 2) return individual;
     
-    const [as1, as2] = [assignments[Math.floor(Math.random() * assignments.length)], assignments[Math.floor(Math.random() * assignments.length)]];
+    const as1 = assignments[Math.floor(Math.random() * assignments.length)];
+    const as2 = assignments[Math.floor(Math.random() * assignments.length)];
+
+    // Do not modify pinned assignments
+    if (isAssignmentPinned(as1, pinnedLocations) || isAssignmentPinned(as2, pinnedLocations)) {
+        return individual;
+    }
 
     // Swap positions
     const tempDay = as1.day, tempSlot = as1.slot;
@@ -871,10 +951,17 @@ const swapMutate = (individual: { timetable: TimetableGrid }, mutationRate: numb
     const batchGrid1 = timetable[as1.batchId];
     const batchGrid2 = timetable[as2.batchId];
     if (batchGrid1 && batchGrid2) {
-        delete batchGrid2[as2.day][as2.slot];
-        delete batchGrid1[as1.day][as1.slot];
-        batchGrid1[as2.day][as2.slot] = as2;
-        batchGrid2[as1.day][as1.slot] = as1;
+        // Clear old slots and set new ones, handling same-batch swaps correctly
+        if (as1.batchId === as2.batchId) {
+            delete batchGrid1[as2.day][as2.slot]; // Delete original as2 slot
+            batchGrid1[as1.day][as1.slot] = as1;
+            batchGrid1[as2.day][as2.slot] = as2;
+        } else {
+            delete batchGrid1[as2.day][as2.slot];
+            delete batchGrid2[as1.day][as1.slot];
+            batchGrid1[as1.day][as1.slot] = as1;
+            batchGrid2[as2.day][as2.slot] = as2;
+        }
     }
     
     return { ...individual, timetable };
@@ -888,8 +975,9 @@ const moveMutate = (
     allFaculty: Faculty[],
     allRooms: Room[],
     constraints: Constraints,
-    days: string[],
-    numSlots: number
+    workingDaysIndices: number[],
+    numSlots: number,
+    pinnedLocations: Set<string>
 ) => {
     if (Math.random() > mutationRate) return individual;
     const timetable = JSON.parse(JSON.stringify(individual.timetable));
@@ -897,6 +985,12 @@ const moveMutate = (
     if (assignments.length === 0) return individual;
 
     const assignmentToMove = assignments[Math.floor(Math.random() * assignments.length)];
+
+    // Do not modify pinned assignments
+    if (isAssignmentPinned(assignmentToMove, pinnedLocations)) {
+        return individual;
+    }
+
     const batchGrid = timetable[assignmentToMove.batchId];
     if (batchGrid?.[assignmentToMove.day]?.[assignmentToMove.slot]) {
         delete batchGrid[assignmentToMove.day][assignmentToMove.slot];
@@ -907,7 +1001,7 @@ const moveMutate = (
 
     // Try to find a new valid spot
     for (let i=0; i < 50; i++) {
-        const day = Math.floor(Math.random() * days.length);
+        const day = workingDaysIndices[Math.floor(Math.random() * workingDaysIndices.length)];
         const slot = Math.floor(Math.random() * numSlots);
         if (isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) {
             const facultyAreAvailable = assignmentToMove.facultyIds.every(fid => isFacultyAvailable(fid, day, slot, flattenTimetable(timetable), constraints.facultyAvailability));
@@ -916,6 +1010,7 @@ const moveMutate = (
                 assignmentToMove.day = day;
                 assignmentToMove.slot = slot;
                 assignmentToMove.roomId = room.id;
+                if (!batchGrid[day]) batchGrid[day] = {};
                 batchGrid[day][slot] = assignmentToMove;
                 return { ...individual, timetable };
             }
@@ -923,6 +1018,7 @@ const moveMutate = (
     }
     
     // If failed, put it back
+    if (!batchGrid[assignmentToMove.day]) batchGrid[assignmentToMove.day] = {};
     batchGrid[assignmentToMove.day][assignmentToMove.slot] = assignmentToMove;
     return individual;
 };
@@ -932,7 +1028,8 @@ const simulatedAnnealing = (
     individual: { timetable: TimetableGrid, metrics: TimetableMetrics },
     batches: Batch[],
     allFaculty: Faculty[],
-    globalConstraints: GlobalConstraints
+    globalConstraints: GlobalConstraints,
+    pinnedLocations: Set<string>
 ) => {
     let currentTimetable = JSON.parse(JSON.stringify(individual.timetable));
     let currentMetrics = calculateMetrics(currentTimetable, batches, allFaculty, globalConstraints);
@@ -944,7 +1041,12 @@ const simulatedAnnealing = (
             const assignments = flattenTimetable(newTimetable);
             if (assignments.length < 2) continue;
             
-            const [as1, as2] = [assignments[Math.floor(Math.random() * assignments.length)], assignments[Math.floor(Math.random() * assignments.length)]];
+            const as1 = assignments[Math.floor(Math.random() * assignments.length)];
+            const as2 = assignments[Math.floor(Math.random() * assignments.length)];
+
+            if (isAssignmentPinned(as1, pinnedLocations) || isAssignmentPinned(as2, pinnedLocations)) {
+                continue; // Skip this iteration if we picked a pinned assignment
+            }
 
             // Swap positions
             const tempDay = as1.day, tempSlot = as1.slot;
@@ -957,8 +1059,8 @@ const simulatedAnnealing = (
              if (batchGrid1 && batchGrid2) {
                 delete batchGrid2[as2.day][as2.slot];
                 delete batchGrid1[as1.day][as1.slot];
-                batchGrid1[as2.day][as2.slot] = as2;
-                batchGrid2[as1.day][as1.slot] = as1;
+                batchGrid1[as1.day][as1.slot] = as1;
+                batchGrid2[as2.day][as2.slot] = as2;
             }
 
             const newMetrics = calculateMetrics(newTimetable, batches, allFaculty, globalConstraints);
@@ -996,62 +1098,126 @@ const greedyRepair = (
     allFaculty: Faculty[],
     allRooms: Room[],
     constraints: Constraints,
-    days: string[],
+    workingDaysIndices: number[],
     numSlots: number,
-    facultyAllocations: FacultyAllocation[]
+    facultyAllocations: FacultyAllocation[],
+    pinnedLocations: Set<string>
 ) => {
     const timetable = individual.timetable;
-    const allCurrentAssignments = flattenTimetable(timetable);
+    const currentAssignments = flattenTimetable(timetable);
 
-    // Identify conflicts and unplaced classes
-    const conflicts: ClassAssignment[] = [];
-    const classCounts: Record<string, number> = {};
-
-    allCurrentAssignments.forEach(a => {
-        const key = `${a.batchId}-${a.subjectId}`;
-        classCounts[key] = (classCounts[key] || 0) + 1;
-        
-        const facultyAreAvailable = a.facultyIds.every(fid => isFacultyAvailable(fid, a.day, a.slot, allCurrentAssignments.filter(ca => ca.id !== a.id), constraints.facultyAvailability));
-        if (!facultyAreAvailable) conflicts.push(a);
-    });
+    // Separate pinned from movable assignments
+    const pinnedAssignments = currentAssignments.filter(a => isAssignmentPinned(a, pinnedLocations));
+    const movableAssignments = currentAssignments.filter(a => !isAssignmentPinned(a, pinnedLocations));
     
-    // Identify missing classes
-    const requiredClasses = batches.flatMap(b => b.subjectIds.map(sId => ({ batchId: b.id, subjectId: sId, hours: allSubjects.find(s=>s.id === sId)?.hoursPerWeek || 0 })));
-    requiredClasses.forEach(rc => {
-        const key = `${rc.batchId}-${rc.subjectId}`;
-        const placedCount = classCounts[key] || 0;
-        if (placedCount < rc.hours) {
-            for (let i = 0; i < rc.hours - placedCount; i++) {
-                conflicts.push({
-                    id: `unplaced_${generateId()}`, subjectId: rc.subjectId, batchId: rc.batchId,
-                    // Dummy values, will be replaced
-                    facultyIds: [], roomId: '', day: -1, slot: -1
-                });
+    // 1. Tally required classes
+    const requiredClassCounts: Record<string, number> = {};
+    batches.forEach(batch => {
+        batch.subjectIds.forEach(subjectId => {
+            const subject = allSubjects.find(s => s.id === subjectId);
+            if (subject) {
+                const key = `${batch.id}-${subjectId}`;
+                requiredClassCounts[key] = subject.hoursPerWeek;
+            }
+        });
+    });
+
+    // 2. Scan for extras and conflicts, starting with a grid containing only pinned assignments.
+    const assignmentsToRemove = new Set<ClassAssignment>();
+    const placedCounts: Record<string, number> = {};
+    const occupiedSlots = new Set<string>(); // "d{day}-s{slot}-{type}{id}"
+
+    // Prime counts and occupied slots with immutable pinned assignments
+    pinnedAssignments.forEach(assignment => {
+        const key = `${assignment.batchId}-${assignment.subjectId}`;
+        placedCounts[key] = (placedCounts[key] || 0) + 1;
+        const batchSlotKey = `d${assignment.day}-s${assignment.slot}-b${assignment.batchId}`;
+        const roomSlotKey = `d${assignment.day}-s${assignment.slot}-r${assignment.roomId}`;
+        occupiedSlots.add(batchSlotKey);
+        occupiedSlots.add(roomSlotKey);
+        assignment.facultyIds.forEach(fid => occupiedSlots.add(`d${assignment.day}-s${assignment.slot}-f${fid}`));
+    });
+
+    // Now check movable assignments against the primed state
+    for (const assignment of movableAssignments) {
+        const key = `${assignment.batchId}-${assignment.subjectId}`;
+        
+        // Check for over-representation
+        if ((placedCounts[key] || 0) >= (requiredClassCounts[key] || 0)) {
+            assignmentsToRemove.add(assignment);
+            continue;
+        }
+
+        // Check for hard conflicts
+        const batchSlotKey = `d${assignment.day}-s${assignment.slot}-b${assignment.batchId}`;
+        const roomSlotKey = `d${assignment.day}-s${assignment.slot}-r${assignment.roomId}`;
+        if (occupiedSlots.has(batchSlotKey) || occupiedSlots.has(roomSlotKey)) {
+            assignmentsToRemove.add(assignment);
+            continue;
+        }
+        let facultyConflict = false;
+        for (const facultyId of assignment.facultyIds) {
+            const facultySlotKey = `d${assignment.day}-s${assignment.slot}-f${facultyId}`;
+            if (occupiedSlots.has(facultySlotKey)) {
+                facultyConflict = true;
+                break;
             }
         }
-    });
-
-    // Attempt to repair
-    for (const conflict of conflicts) {
-        // Remove from current position if it exists
-        if (conflict.day !== -1 && timetable[conflict.batchId]?.[conflict.day]?.[conflict.slot]) {
-            delete timetable[conflict.batchId][conflict.day][conflict.slot];
+        if (facultyConflict) {
+            assignmentsToRemove.add(assignment);
+            continue;
         }
 
-        const batch = batches.find(b => b.id === conflict.batchId)!;
-        const subject = allSubjects.find(s => s.id === conflict.subjectId)!;
+        // If valid, occupy slot and increment count
+        placedCounts[key] = (placedCounts[key] || 0) + 1;
+        occupiedSlots.add(batchSlotKey);
+        occupiedSlots.add(roomSlotKey);
+        assignment.facultyIds.forEach(fid => occupiedSlots.add(`d${assignment.day}-s${assignment.slot}-f${fid}`));
+    }
+    
 
-        // Find a new valid spot
+    // 3. Remove them from the grid
+    assignmentsToRemove.forEach(assignment => {
+        if (timetable[assignment.batchId]?.[assignment.day]?.[assignment.slot]?.id === assignment.id) {
+            delete timetable[assignment.batchId][assignment.day][assignment.slot];
+        }
+    });
+
+    // 4. Identify which classes are now missing
+    const classesToPlace: { batchId: string, subjectId: string }[] = [];
+    const finalPlacedCounts: Record<string, number> = {};
+    flattenTimetable(timetable).forEach(a => {
+        const key = `${a.batchId}-${a.subjectId}`;
+        finalPlacedCounts[key] = (finalPlacedCounts[key] || 0) + 1;
+    });
+
+    for (const key in requiredClassCounts) {
+        const required = requiredClassCounts[key];
+        const placed = finalPlacedCounts[key] || 0;
+        if (placed < required) {
+            const [batchId, subjectId] = key.split(/-(.+)/s);
+            for (let i = 0; i < required - placed; i++) {
+                classesToPlace.push({ batchId, subjectId });
+            }
+        }
+    }
+
+    // 5. Try to place all missing classes
+    for (const classToPlace of classesToPlace) {
+        const batch = batches.find(b => b.id === classToPlace.batchId)!;
+        const subject = allSubjects.find(s => s.id === classToPlace.subjectId)!;
+        
         let placed = false;
+        // Try a few times to find a random valid spot
         for (let i = 0; i < 100; i++) { // Limit attempts
-            const day = Math.floor(Math.random() * days.length);
+            const day = workingDaysIndices[Math.floor(Math.random() * workingDaysIndices.length)];
             const slot = Math.floor(Math.random() * numSlots);
             
             if (!isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) continue;
             
             const facultyCandidates = findFacultyForClass(batch.id, subject.id, allFaculty, facultyAllocations);
             const requiredFacultyCount = subject.type === 'Practical' ? 2 : 1;
-            const selectedFaculty = [];
+            const selectedFaculty: Faculty[] = [];
              for (const fac of facultyCandidates) {
                 if (isFacultyAvailable(fac.id, day, slot, flattenTimetable(timetable), constraints.facultyAvailability)) {
                     selectedFaculty.push(fac);
@@ -1064,7 +1230,9 @@ const greedyRepair = (
             if (room) {
                  if (!timetable[batch.id][day]) timetable[batch.id][day] = {};
                  timetable[batch.id][day][slot] = {
-                    ...conflict,
+                    id: generateId(),
+                    subjectId: subject.id,
+                    batchId: batch.id,
                     facultyIds: selectedFaculty.map(f => f.id),
                     roomId: room.id,
                     day, slot

@@ -6,14 +6,12 @@ import * as api from '../services';
 import type { AnalyticsReport, GeneratedTimetable } from '../types';
 import { GlassSelect } from '../components/ui/GlassSelect';
 import { Loader2, BarChart4, Thermometer, UserCheck, Wind } from 'lucide-react';
-import { DAYS_OF_WEEK } from '../constants';
 import { useQuery } from '@tanstack/react-query';
 
 const AnalyticsDashboard: React.FC<{ report: AnalyticsReport }> = ({ report }) => {
+    const { timeSlots, workingDays, workingDaysIndices } = useAppContext();
     const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
-    const { data: settings } = useQuery({ queryKey: ['settings'], queryFn: api.getSettings });
-    const timeSlots = settings?.timetableSettings ? [] : []; // Simplified for now
-
+    
     const [selectedRoomId, setSelectedRoomId] = useState<string>(rooms[0]?.id || '');
     const maxWorkload = Math.max(...report.facultyWorkload.map(f => f.totalHours), 0);
     const maxUtilization = Math.max(...report.roomUtilization.map(r => r.utilizationPercent), 0);
@@ -77,13 +75,13 @@ const AnalyticsDashboard: React.FC<{ report: AnalyticsReport }> = ({ report }) =
                     </div>
                 </div>
                  <div className="overflow-x-auto">
-                    <div className="grid grid-cols-[auto_repeat(6,minmax(60px,1fr))] gap-1 min-w-[600px]">
+                    <div className="grid grid-cols-[auto_repeat(6,minmax(60px,1fr))] gap-1 min-w-[600px]" style={{ gridTemplateColumns: `auto repeat(${workingDays.length}, minmax(60px, 1fr))` }}>
                          <div/>
-                         {DAYS_OF_WEEK.map(day => <div key={day} className="text-center font-semibold text-white p-1 text-xs">{day.substring(0,3)}</div>)}
+                         {workingDays.map(day => <div key={day} className="text-center font-semibold text-white p-1 text-xs">{day.substring(0,3)}</div>)}
                          {timeSlots.map((slot, slotIndex) => (
                              <React.Fragment key={slotIndex}>
                                 <div className="text-right text-text-muted p-1 text-xs font-mono">{slot.split(' ')[0]}</div>
-                                {DAYS_OF_WEEK.map((_, dayIndex) => {
+                                {workingDaysIndices.map((dayIndex) => {
                                     const isUsed = heatmap[dayIndex]?.[slotIndex] === 1;
                                     return (
                                         <div key={dayIndex} title={`${isUsed ? 'Booked' : 'Free'}`} className={`h-8 rounded ${isUsed ? 'bg-accent/80' : 'bg-panel-strong'}`}/>

@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import {
-    Cpu, Dna, Bot, Lightbulb, TestTube2, CheckSquare, GitMerge, Shuffle, Repeat, Goal, Award, Sparkles, BrainCircuit, ArrowDown
+    Cpu, Dna, Bot, Lightbulb, TestTube2, CheckSquare, GitMerge, Shuffle, Repeat, Goal, Award, Sparkles, BrainCircuit, ArrowDown, ArrowRight
 } from 'lucide-react';
+import { cn } from '../utils/cn';
 
 const SectionHeader: React.FC<{ icon: React.ElementType; title: string; subtitle: string }> = ({ icon: Icon, title, subtitle }) => (
-  <div className="text-center mb-12">
+  <div className="text-center mb-16">
     <div className="inline-flex items-center justify-center p-4 bg-accent/10 border border-accent/20 rounded-2xl mb-4">
       <Icon className="h-10 w-10 text-accent" />
     </div>
@@ -29,17 +30,119 @@ const InfoCard: React.FC<{ icon: React.ElementType; title: string; children: Rea
 );
 
 const FlowStep: React.FC<{ number: string, title: string, children: React.ReactNode, isLast?: boolean }> = ({ number, title, children, isLast }) => (
-    <div>
-        <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-accent/20 border border-accent/30 font-bold text-accent">{number}</div>
-            <div>
-                <h4 className="font-bold text-white">{title}</h4>
-                <p className="text-sm text-text-muted">{children}</p>
-            </div>
+    <div className="relative pl-14">
+        {!isLast && <div className="absolute left-[23px] top-12 bottom-0 w-px bg-border" />}
+        <div className="absolute left-0 top-0 flex items-center justify-center w-12 h-12 bg-panel-strong border-2 border-accent/50 rounded-full font-bold text-accent text-lg">{number}</div>
+        <div className="ml-4">
+            <h4 className="font-bold text-white text-lg">{title}</h4>
+            <p className="text-sm text-text-muted">{children}</p>
         </div>
-         {!isLast && <div className="pl-5 h-8"><div className="w-px h-full bg-border ml-px"/></div>}
     </div>
 );
+
+
+const TimetableGridVisual: React.FC<{ slots: (number | null)[]; highlight?: number | number[]; className?: string }> = ({ slots, highlight, className }) => (
+    <div className={cn("grid grid-cols-5 gap-1 p-2 bg-panel rounded-md transition-all duration-300", className)}>
+        {slots.map((slot, i) => {
+            const isHighlighted = Array.isArray(highlight) ? highlight.includes(i) : highlight === i;
+            return (
+                <div key={i} className={cn(
+                    'h-4 w-4 rounded-sm transition-all duration-300',
+                    slot === 1 ? 'bg-accent/80' : slot === 2 ? 'bg-green-500/80' : 'bg-panel-strong',
+                    isHighlighted && 'ring-2 ring-yellow-400 scale-125'
+                )} />
+            );
+        })}
+    </div>
+);
+
+const GeneticAlgorithmVisualizer: React.FC = () => {
+    const [activeTab, setActiveTab] = useState<'chromosome' | 'crossover' | 'mutation'>('chromosome');
+
+    const chromosomeSlots = [1, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0];
+    const parent1Slots = [1, 1, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 1, 0, 0];
+    const parent2Slots = [0, 0, 2, 2, 0, 2, 0, 2, 0, 2, 2, 0, 0, 2, 2];
+    const childSlots = [1, 1, 2, 2, 0, 2, 0, 2, 0, 2, 2, 0, 0, 2, 2];
+    const mutationBeforeSlots = [1, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0, 0, 0, 1, 0];
+    const mutationAfterSlots = [1, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0];
+
+    const tabs = [
+        { id: 'chromosome', label: 'Chromosome', icon: Dna },
+        { id: 'crossover', label: 'Crossover', icon: GitMerge },
+        { id: 'mutation', label: 'Mutation', icon: Repeat },
+    ];
+
+    return (
+        <GlassPanel className="p-6">
+            <div className="flex justify-center border-b border-border mb-6">
+                {tabs.map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id as any)}
+                        className={cn(
+                            'flex items-center gap-2 px-4 py-2 text-sm font-semibold border-b-2 transition-colors',
+                            activeTab === tab.id
+                                ? 'border-accent text-accent'
+                                : 'border-transparent text-text-muted hover:text-white'
+                        )}
+                    >
+                        <tab.icon size={16} />
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="min-h-[12rem] flex items-center justify-center">
+                {activeTab === 'chromosome' && (
+                    <div className="text-center animate-fade-in-up">
+                        <TimetableGridVisual slots={chromosomeSlots} />
+                        <h4 className="font-bold text-white mt-4">A Single Timetable</h4>
+                        <p className="text-sm text-text-muted">Each "chromosome" is one complete solution—a full set of class assignments.</p>
+                    </div>
+                )}
+                {activeTab === 'crossover' && (
+                    <div className="text-center animate-fade-in-up">
+                        <div className="flex items-center justify-center gap-4">
+                            <TimetableGridVisual slots={parent1Slots} />
+                            <span className="text-2xl font-bold text-accent">+</span>
+                            <TimetableGridVisual slots={parent2Slots} />
+                            <span className="text-2xl font-bold text-accent">=</span>
+                            <TimetableGridVisual slots={childSlots} />
+                        </div>
+                        <h4 className="font-bold text-white mt-4">Combining Parents</h4>
+                        <p className="text-sm text-text-muted">Traits from two "parent" timetables are combined to create a new "child" solution.</p>
+                    </div>
+                )}
+                {activeTab === 'mutation' && (
+                    <div className="text-center animate-fade-in-up">
+                         <div className="flex items-center justify-center gap-4">
+                            <TimetableGridVisual slots={mutationBeforeSlots} highlight={[3, 13]} />
+                            <ArrowRight className="text-accent"/>
+                            <TimetableGridVisual slots={mutationAfterSlots} highlight={[12, 13]} />
+                        </div>
+                        <h4 className="font-bold text-white mt-4">Random Change</h4>
+                        <p className="text-sm text-text-muted">A small, random swap is introduced to explore new possibilities and avoid getting stuck.</p>
+                    </div>
+                )}
+            </div>
+        </GlassPanel>
+    );
+}
+
+const GeminiLevelCard: React.FC<{ icon: React.ElementType; level: number; title: string; children: React.ReactNode; isLast?: boolean }> = ({ icon: Icon, level, title, children, isLast }) => (
+    <div className="relative pl-16">
+        {!isLast && <div className="absolute left-8 top-16 bottom-0 w-0.5 bg-gradient-to-b from-yellow-400/50 via-yellow-400/20 to-transparent" />}
+        <div className="absolute left-0 top-0 flex items-center justify-center w-16 h-16 bg-yellow-900/20 border-2 border-yellow-400/50 rounded-full">
+            <Icon className="w-8 h-8 text-yellow-400" />
+        </div>
+        <div className="ml-4">
+            <p className="text-yellow-400 font-bold">LEVEL {level}</p>
+            <h3 className="text-2xl font-bold text-white mb-2">{title}</h3>
+            <p className="text-text-muted">{children}</p>
+        </div>
+    </div>
+);
+
 
 const AlgorithmDeepDive: React.FC = () => {
   return (
@@ -60,28 +163,8 @@ const AlgorithmDeepDive: React.FC = () => {
           title="The Foundation: A Genetic Algorithm"
           subtitle="Inspired by Darwin's theory of evolution, a Genetic Algorithm (GA) doesn't solve a problem head-on. Instead, it breeds and evolves populations of potential solutions until the 'fittest' one emerges."
         />
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <InfoCard icon={GitMerge} title="Chromosome">
-                Each "chromosome" is a single, complete timetable. It's a full set of class assignments, representing one possible solution to the entire puzzle.
-            </InfoCard>
-            <InfoCard icon={Shuffle} title="Population">
-                The algorithm starts by creating a large "population" of hundreds of different chromosomes (timetables). Most of these initial solutions are random and not very good.
-            </InfoCard>
-            <InfoCard icon={Goal} title="Fitness Function">
-                This is the judge. Every single timetable is given a score based on how well it meets our goals. It loses points for student gaps, faculty overwork, and other "bad" traits. The goal of evolution is to maximize this score.
-            </InfoCard>
-        </div>
-        <h3 className="text-2xl font-bold text-center mt-12 mb-8 text-white">The Evolutionary Cycle</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <InfoCard icon={CheckSquare} title="Selection">
-                The best timetables (those with the highest fitness scores) are selected to be "parents" for the next generation. This is survival of the fittest in action.
-            </InfoCard>
-            <InfoCard icon={TestTube2} title="Crossover">
-                Two parent timetables are combined. For example, the algorithm might take Monday and Tuesday from Timetable A and the rest of the week from Timetable B, creating a new "child" that inherits traits from both.
-            </InfoCard>
-            <InfoCard icon={Repeat} title="Mutation">
-                To keep the gene pool fresh and avoid getting stuck, the algorithm introduces small, random changes. It might swap two classes or move a single class to a new time slot, exploring new possibilities.
-            </InfoCard>
+        <div className="max-w-3xl mx-auto">
+            <GeneticAlgorithmVisualizer />
         </div>
       </section>
 
@@ -104,19 +187,19 @@ const AlgorithmDeepDive: React.FC = () => {
       <section>
         <SectionHeader
           icon={Bot}
-          title="The Secret Sauce: Google Gemini Integration"
+          title="The Secret Sauce: Three Levels of Gemini"
           subtitle="This is what elevates our engine from merely smart to truly intelligent. We use Gemini not just to generate content, but as an active participant and strategist in the optimization process itself."
         />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <InfoCard icon={Award} title="Level 1: The Self-Tuning Judge">
+        <div className="max-w-3xl mx-auto space-y-12">
+            <GeminiLevelCard icon={Award} level={1} title="The Self-Tuning Judge">
                 Gemini analyzes feedback from past timetables (e.g., faculty ratings) to dynamically adjust the fitness function. If faculty consistently dislike morning gaps, Gemini tells the algorithm to penalize that trait more heavily in the next run, making the system learn and adapt over time.
-            </InfoCard>
-            <InfoCard icon={BrainCircuit} title="Level 2: The Master Strategist">
+            </GeminiLevelCard>
+            <GeminiLevelCard icon={BrainCircuit} level={2} title="The Master Strategist">
                 Before the evolution even begins, Gemini creates a custom, multi-phase game plan. It decides the optimal balance of exploration (broad searching) and exploitation (deep refinement) for the specific problem, ensuring the most efficient path to a solution.
-            </InfoCard>
-            <InfoCard icon={Lightbulb} title="Level 3: The Creative Interventionist">
+            </GeminiLevelCard>
+            <GeminiLevelCard icon={Lightbulb} level={3} title="The Creative Interventionist" isLast>
                 If the algorithm gets stuck for too long, it sends the problematic timetable to Gemini. Gemini analyzes the deadlock and suggests a creative, "out-of-the-box" structural change to get the evolutionary process moving again, breaking through barriers that pure algorithms might not.
-            </InfoCard>
+            </GeminiLevelCard>
         </div>
       </section>
       
@@ -127,7 +210,7 @@ const AlgorithmDeepDive: React.FC = () => {
           subtitle="Here’s how these layers work in concert when a user clicks 'Generate'."
         />
         <GlassPanel className="max-w-4xl mx-auto p-8">
-            <div className="space-y-0">
+            <div className="space-y-8">
                 <FlowStep number="1" title="User Request">The process starts when a Timetable Manager selects batches and clicks 'Generate'.</FlowStep>
                 <FlowStep number="2" title="Gemini Devises Strategy">Gemini analyzes the request and provides a high-level, multi-phase plan for the Genetic Algorithm to follow.</FlowStep>
                 <FlowStep number="3" title="Initial Population Created">The engine generates hundreds of random, but valid, timetables to form the starting gene pool.</FlowStep>

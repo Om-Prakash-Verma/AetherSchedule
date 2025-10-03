@@ -1,6 +1,3 @@
-
-
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { GlassPanel } from './GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
@@ -43,7 +40,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
     timetableData, isEditable = false, onDropAssignment, onFindSubstitute, conflictMap, substitutions = [], viewDate = new Date() 
 }) => {
   // FIX: Fetch data with useQuery instead of getting it from context.
-  const { timeSlots } = useAppContext();
+  const { timeSlots, workingDays, workingDaysIndices } = useAppContext();
   const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
   const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
   const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
@@ -117,10 +114,10 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
 
   return (
     <div className="overflow-x-auto relative printable-area">
-      <div className="grid grid-cols-[auto_repeat(6,minmax(120px,1fr))] gap-1 min-w-[900px]">
+      <div className="grid grid-cols-[auto_repeat(6,minmax(120px,1fr))] gap-1 min-w-[900px]" style={{ gridTemplateColumns: `auto repeat(${workingDays.length}, minmax(120px, 1fr))` }}>
         {/* Header */}
         <div className="sticky top-0 left-0 z-20 bg-panel/80 backdrop-blur-sm" />
-        {DAYS_OF_WEEK.map(day => (
+        {workingDays.map(day => (
           <div key={day} className="text-center font-bold text-white p-2 sticky top-0 z-10 bg-panel/80 backdrop-blur-sm text-sm sm:text-base">
             {day}
           </div>
@@ -132,7 +129,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
             <div className="text-right text-text-muted p-2 text-xs sticky left-0 z-10 bg-panel/80 backdrop-blur-sm flex items-center justify-end font-mono">
               <span>{slot}</span>
             </div>
-            {DAYS_OF_WEEK.map((_, dayIndex) => {
+            {workingDaysIndices.map((dayIndex) => {
               const assignment = timetableData.timetable[dayIndex]?.[slotIndex];
               const assignmentConflicts = assignment ? conflictMap.get(assignment.id) : undefined;
               
@@ -175,13 +172,17 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                             ${assignmentConflicts ? 'border-2 border-danger shadow-lg shadow-danger/20' : activeSubstitution ? 'border-2 border-teal-500/80' : batchColor }
                             ${draggingItem?.id === assignment.id ? 'opacity-50 scale-95' : ''}`}
                           >
+                            {/* NEW: Add a subtle pulsing background overlay for conflicting assignments to make them more prominent. */}
+                            {assignmentConflicts && (
+                                <div className="absolute inset-0 animate-pulse-bg-danger rounded-xl pointer-events-none" />
+                            )}
                             {activeSubstitution && (
-                              <div className="absolute top-1 left-1 flex items-center gap-1 text-teal-400 bg-teal-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+                              <div className="absolute top-1 left-1 flex items-center gap-1 text-teal-400 bg-teal-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-bold z-10">
                                   <UserCheck size={10}/>
                                   <span>SUB</span>
                               </div>
                             )}
-                            <div className="flex-1">
+                            <div className="flex-1 relative z-10">
                               <p className="font-bold text-white truncate">{displaySubject?.name || 'Unknown'}</p>
                               <p className="text-text-muted truncate" title={displayFaculty.map(f => f.name).join(', ')}>{displayFaculty.map(f => f.name).join(', ') || 'Unknown'}</p>
                               <p className="text-text-muted truncate">@{rooms.find(r => r.id === assignment.roomId)?.name || 'Unknown'}</p>
@@ -189,7 +190,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                                   <p className="text-[var(--accent)] text-xs truncate mt-1">{getBatchForAssignment(assignment)?.name || 'Unknown'}</p>
                               )};
                             </div>
-                            <div className="absolute top-1 right-1 flex items-center gap-1">
+                            <div className="absolute top-1 right-1 flex items-center gap-1 z-10">
                               {/* FIX: Added a detailed tooltip to the conflict icon for better UX. */}
                               {assignmentConflicts && (
                                 <div className="relative group/tooltip">
@@ -203,7 +204,7 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
                               )}
                               {isEditable && <GripVertical className="text-text-muted/20 group-hover:text-text-muted" size={16} />}
                             </div>
-                            {isEditable && onFindSubstitute && assignment.facultyIds.length === 1 && (
+                            {onFindSubstitute && assignment.facultyIds.length === 1 && (
                                 <button
                                     onClick={(e) => handleSubstituteButtonClick(e, assignment)}
                                     className="absolute bottom-1 right-1 z-10 p-1.5 rounded-md bg-panel-strong/50 hover:bg-panel text-text-muted hover:text-accent opacity-0 group-hover:opacity-100 transition-all duration-200"

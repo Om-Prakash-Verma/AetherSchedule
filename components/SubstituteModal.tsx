@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { Modal } from './ui/Modal';
 import { GlassButton } from './GlassButton';

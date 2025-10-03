@@ -22,6 +22,7 @@ export const {
     getAnalyticsReport,
     saveTimetable,
     updateTimetable,
+    deleteTimetable,
     saveTimetableFeedback,
     saveSubject,
     deleteSubject,

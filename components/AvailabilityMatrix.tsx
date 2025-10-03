@@ -9,7 +9,7 @@ interface AvailabilityMatrixProps {
 }
 
 export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availability, onChange }) => {
-  const { timeSlots } = useAppContext();
+  const { timeSlots, workingDays, workingDaysIndices } = useAppContext();
   const [localAvailability, setLocalAvailability] = useState(availability);
   const [isDragging, setIsDragging] = useState(false);
   const [dragMode, setDragMode] = useState<'available' | 'unavailable' | null>(null);
@@ -78,10 +78,10 @@ export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availabi
 
   return (
     <div className="overflow-x-auto" onMouseLeave={isDragging ? handleMouseUp : undefined}>
-      <div className="grid grid-cols-[auto_repeat(6,minmax(100px,1fr))] gap-1 min-w-[700px] select-none">
+      <div className="grid grid-cols-[auto_repeat(6,minmax(100px,1fr))] gap-1 min-w-[700px] select-none" style={{ gridTemplateColumns: `auto repeat(${workingDays.length}, minmax(100px, 1fr))` }}>
         {/* Header */}
         <div />
-        {DAYS_OF_WEEK.map(day => (
+        {workingDays.map(day => (
           <div key={day} className="text-center font-semibold text-[var(--text-white)] p-2 text-sm sticky top-0 bg-panel z-10">
             {day}
           </div>
@@ -93,7 +93,7 @@ export const AvailabilityMatrix: React.FC<AvailabilityMatrixProps> = ({ availabi
             <div className="text-right text-[var(--text-muted)] p-2 text-xs flex items-center justify-end font-mono sticky left-0 bg-panel z-10">
               <span>{slot}</span>
             </div>
-            {DAYS_OF_WEEK.map((_, dayIndex) => {
+            {workingDaysIndices.map((dayIndex) => {
               const isAvailable = localAvailability?.[dayIndex]?.includes(slotIndex);
               return (
                 <div

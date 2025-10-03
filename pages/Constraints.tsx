@@ -1,11 +1,12 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
 import { GlassButton } from '../components/GlassButton';
-import { PlusCircle, Bot, Wand2 } from 'lucide-react';
+import { PlusCircle } from 'lucide-react';
 import { GlassSelect } from '../components/ui/GlassSelect';
 import { AvailabilityMatrix } from '../components/AvailabilityMatrix';
 import { DataTable } from '../components/DataTable';
@@ -15,13 +16,12 @@ import { DAYS_OF_WEEK } from '../constants';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useConfirm } from '../hooks/useConfirm';
 
-type ConstraintType = 'availability' | 'pinned' | 'leaves' | 'presets';
+type ConstraintType = 'availability' | 'pinned' | 'leaves';
 
 const TABS: { id: ConstraintType, label: string }[] = [
     { id: 'availability', label: 'Faculty Availability' },
     { id: 'pinned', label: 'Pinned Assignments' },
     { id: 'leaves', label: 'Planned Leaves' },
-    { id: 'presets', label: 'AI Constraint Builder' },
 ];
 
 
@@ -120,30 +120,6 @@ const Constraints: React.FC = () => {
         { accessor: 'reason', header: 'Reason' },
     ];
 
-    const AIBuiltConstraints = () => {
-        // ... (existing content, no data fetching logic to change)
-        return (
-             <div>
-                 <div className="flex items-center gap-3 mb-4 text-accent">
-                    <Bot size={24}/>
-                    <h3 className="text-xl font-bold text-white">AI-Assisted Constraint Builder</h3>
-                </div>
-                <p className="text-sm text-text-muted mb-4">
-                   Describe a scheduling rule in plain English. The AI will translate it into a formal constraint that the engine can understand. This feature is for demonstrating advanced logic and is not fully implemented.
-                </p>
-                <div className="space-y-4">
-                    <textarea 
-                        placeholder="e.g., 'No faculty member should teach for more than 3 consecutive hours' or 'First-year students should not have classes after 4 PM'" 
-                        className="glass-input min-h-[100px] text-sm"
-                    />
-                    <GlassButton icon={Wand2}>
-                        Build Rule with AI
-                    </GlassButton>
-                </div>
-            </div>
-        )
-    }
-
     const renderContent = () => {
         switch (activeTab) {
             case 'availability':
@@ -200,8 +176,6 @@ const Constraints: React.FC = () => {
                         />
                     </div>
                 );
-            case 'presets':
-                return <AIBuiltConstraints />;
             default: return null;
         }
     }

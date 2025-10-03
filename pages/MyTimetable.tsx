@@ -1,12 +1,8 @@
-
-
-
-
 import React, { useMemo, useState } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { TimetableView } from '../components/TimetableView';
 import { useAppContext } from '../hooks/useAppContext';
-import type { GeneratedTimetable, SingleBatchTimetableGrid, ClassAssignment } from '../types';
+import type { GeneratedTimetable, SingleBatchTimetableGrid, ClassAssignment, TimetableGrid } from '../types';
 import { Calendar } from 'lucide-react';
 import { GlassButton } from '../components/GlassButton';
 import { useQuery } from '@tanstack/react-query';
@@ -17,7 +13,21 @@ const getWeekStart = (date: Date) => {
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
     return new Date(d.setDate(diff));
-}
+};
+
+const toYyyyMmDd = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const flattenTimetable = (timetable: TimetableGrid): ClassAssignment[] => {
+    return Object.values(timetable).flatMap(batchGrid => 
+        Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
+    );
+};
+
 
 const MyTimetable: React.FC = () => {
     const { user } = useAppContext();
@@ -50,18 +60,35 @@ const MyTimetable: React.FC = () => {
                 timetable: {},
             };
 
+            const allApprovedAssignments = approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
+            
+            const viewDateStr = toYyyyMmDd(viewDate);
+            const activeSubstitutions = (constraints.substitutions || []).filter(sub => 
+                viewDateStr >= sub.startDate && viewDateStr <= sub.endDate
+            );
+            
+            const substitutedAssignmentIdsThisDate = new Set(activeSubstitutions.map(sub => sub.originalAssignmentId));
             const userAssignments: ClassAssignment[] = [];
-            approvedTimetables.forEach(tt => {
-                Object.values(tt.timetable).forEach(batchGrid => {
-                    Object.values(batchGrid).forEach(daySlots => {
-                        Object.values(daySlots).forEach(assignment => {
-                            const classAssignment = assignment as ClassAssignment;
-                            if (classAssignment.facultyIds.includes(user.facultyId!)) {
-                                userAssignments.push(classAssignment);
-                            }
-                        });
-                    });
-                });
+            
+            // 1. Add originally assigned classes, unless they're substituted today.
+            allApprovedAssignments.forEach(assignment => {
+                if (assignment.facultyIds.includes(user.facultyId!) && !substitutedAssignmentIdsThisDate.has(assignment.id)) {
+                    userAssignments.push(assignment);
+                }
+            });
+
+            // 2. Add classes the user is substituting for today.
+            activeSubstitutions.forEach(sub => {
+                if (sub.substituteFacultyId === user.facultyId!) {
+                    const originalAssignment = allApprovedAssignments.find(a => a.id === sub.originalAssignmentId);
+                    if (originalAssignment) {
+                        const substitutedAssignment: ClassAssignment = {
+                            ...originalAssignment,
+                            facultyIds: [sub.substituteFacultyId],
+                        };
+                        userAssignments.push(substitutedAssignment);
+                    }
+                }
             });
 
             const grid: SingleBatchTimetableGrid = {};
@@ -74,7 +101,7 @@ const MyTimetable: React.FC = () => {
         }
 
         return null;
-    }, [user, generatedTimetables]);
+    }, [user, generatedTimetables, constraints.substitutions, viewDate]);
     
     const displayGrid = useMemo(() => {
         if (!userTimetable) return {};

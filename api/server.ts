@@ -1,6 +1,3 @@
-
-
-
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { db } from '../db';
@@ -332,6 +329,22 @@ app.post('/timetables', async (c) => {
     return c.json(timetable);
 });
 
+app.delete('/timetables/:id', async (c) => {
+    const { id } = c.req.param();
+    const existing = await db.query.timetables.findFirst({ where: eq(schema.timetables.id, id) });
+    if (!existing) {
+        return c.json({ message: 'Timetable not found' }, 404);
+    }
+
+    // First, delete any associated feedback to avoid foreign key violations.
+    await db.delete(schema.feedback).where(eq(schema.feedback.timetableId, id));
+    
+    // Then, delete the timetable itself.
+    await db.delete(schema.timetables).where(eq(schema.timetables.id, id));
+    
+    return c.json({ success: true });
+});
+
 app.post('/timetables/feedback', async (c) => {
     const feedbackData: Omit<TimetableFeedback, 'id' | 'createdAt'> = await c.req.json();
     const newFeedback = {
@@ -400,12 +413,24 @@ app.post('/substitutes/find', async (c) => {
         return c.json({ message: "Current timetable grid is required." }, 400);
     }
 
-    const allAssignmentsInCurrentGrid: ClassAssignment[] = Object.values(currentTimetableGrid as TimetableGrid).flatMap(batchGrid =>
+    const assignmentsInCurrentGrid: ClassAssignment[] = Object.values(currentTimetableGrid as TimetableGrid).flatMap(batchGrid =>
         Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
     );
 
-    const targetAssignment = allAssignmentsInCurrentGrid.find(a => a.id === assignmentId);
+    const targetAssignment = assignmentsInCurrentGrid.find(a => a.id === assignmentId);
     if (!targetAssignment) return c.json({ message: "Target assignment not found in the provided timetable." }, 404);
+
+    // Fetch all approved timetables from the database to get a complete picture of all commitments.
+    const allApprovedTimetables: GeneratedTimetable[] = await db.query.timetables.findMany({ 
+        where: eq(schema.timetables.status, 'Approved') 
+    });
+
+    // Flatten all assignments from all approved timetables into a single list.
+    const allApprovedAssignments = allApprovedTimetables.flatMap(tt => 
+        Object.values(tt.timetable).flatMap(batchGrid => 
+            Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
+        )
+    );
 
     const allFaculty: Faculty[] = await db.query.faculty.findMany();
     const allSubjects: Subject[] = await db.query.subjects.findMany();
@@ -413,7 +438,15 @@ app.post('/substitutes/find', async (c) => {
     const allFacultyAllocations: FacultyAllocation[] = await db.query.facultyAllocations.findMany();
     const constraintsData: Partial<Constraints> = (await db.query.constraints.findFirst()) || {};
     
-    const rankedSubstitutes = await findRankedSubstitutes(targetAssignment, allFaculty, allSubjects, allAssignmentsInCurrentGrid, constraintsData.facultyAvailability || [], allFacultyAllocations, allBatches);
+    const rankedSubstitutes = await findRankedSubstitutes(
+        targetAssignment, 
+        allFaculty, 
+        allSubjects, 
+        allApprovedAssignments, // Pass the correct, complete list here
+        constraintsData.facultyAvailability || [], 
+        allFacultyAllocations, 
+        allBatches
+    );
     return c.json(rankedSubstitutes);
 });
 
@@ -454,6 +487,8 @@ app.post('/scheduler', async (c) => {
     const globalConstraints: GlobalConstraints = (await db.query.globalConstraints.findFirst())!;
     const timetableSettings: TimetableSettings = (await db.query.timetableSettings.findFirst())!;
 
+    const workingDaysStrings = (timetableSettings.workingDays || [0,1,2,3,4,5]).map(i => DAYS_OF_WEEK[i]);
+
     const dbData = {
         batches: batchesForScheduler,
         allSubjects,
@@ -464,7 +499,8 @@ app.post('/scheduler', async (c) => {
         facultyAllocations,
         globalConstraints,
         timetableSettings,
-        days: DAYS_OF_WEEK,
+        days: workingDaysStrings,
+        workingDaysIndices: timetableSettings.workingDays || [0,1,2,3,4,5],
         candidateCount: 5,
         baseTimetable,
     };

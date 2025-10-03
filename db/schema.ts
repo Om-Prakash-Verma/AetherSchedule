@@ -1,7 +1,5 @@
-
-
 import { pgTable, text, integer, boolean, jsonb, timestamp, varchar, primaryKey, real } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import type {
     Role,
     AnalyticsReport,
@@ -120,6 +118,7 @@ export const timetableSettings = pgTable('timetable_settings', {
     collegeEndTime: text('college_end_time').notNull(),
     periodDuration: integer('period_duration').notNull(),
     breaks: jsonb('breaks').$type<{ name: string; startTime: string; endTime: string }[]>(),
+    workingDays: jsonb('working_days').$type<number[]>().notNull().default(sql`'[0, 1, 2, 3, 4, 5]'::jsonb`),
 });
 
 

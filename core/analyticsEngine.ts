@@ -1,9 +1,29 @@
 import type { GeneratedTimetable, Subject, Faculty, Room, Batch, TimetableSettings, AnalyticsReport, ClassAssignment } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
 import { generateTimeSlots } from '../utils/time';
-import { GoogleGenAI } from "@google/genai";
+// FIX: Import GenerateContentResponse to strongly type the API response.
+import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+
+// Helper function to retry Gemini API calls on overload errors.
+async function callGeminiWithRetry<T>(
+    apiCall: () => Promise<T>,
+    options: { retries?: number; delayMs?: number } = {}
+): Promise<T> {
+  const { retries = 2, delayMs = 1000 } = options;
+  try {
+    return await apiCall();
+  } catch (error: any) {
+    const isOverloaded = error.status === 503 || (error.message && error.message.toLowerCase().includes('overloaded'));
+    if (retries > 0 && isOverloaded) {
+      console.warn(`Gemini API overloaded. Retrying in ${delayMs / 1000}s... (${retries} retries left)`);
+      await new Promise(res => setTimeout(res, delayMs));
+      return callGeminiWithRetry(apiCall, { retries: retries - 1, delayMs: delayMs * 2 });
+    }
+    throw error;
+  }
+}
 
 const flattenTimetable = (timetable: GeneratedTimetable['timetable']): ClassAssignment[] => {
     return Object.values(timetable).flatMap(batchGrid =>
@@ -22,6 +42,7 @@ export const generateAnalyticsReport = (
     const assignments = flattenTimetable(timetable.timetable);
     const timeSlots = generateTimeSlots(settings);
     const numSlots = timeSlots.length;
+    const workingDaysIndices = settings.workingDays || [0, 1, 2, 3, 4, 5];
 
     // 1. Faculty Workload
     const facultyWorkloadMap = new Map<string, number>();
@@ -52,7 +73,7 @@ export const generateAnalyticsReport = (
         }
     });
 
-    const totalHoursAvailable = DAYS_OF_WEEK.length * numSlots;
+    const totalHoursAvailable = workingDaysIndices.length * numSlots;
     const roomUtilization = Array.from(roomUtilizationMap.entries()).map(([roomId, totalHours]) => {
         const room = allRooms.find(r => r.id === roomId);
         return {
@@ -71,7 +92,7 @@ export const generateAnalyticsReport = (
         let totalGaps = 0;
         let totalMaxConsecutive = 0;
 
-        for (let day = 0; day < DAYS_OF_WEEK.length; day++) {
+        for (const day of workingDaysIndices) {
             const daySlots = batchGrid?.[day] ? Object.keys(batchGrid[day]).map(Number).sort((a, b) => a - b) : [];
             if (daySlots.length > 1) {
                 for (let i = 0; i < daySlots.length - 1; i++) {
@@ -101,7 +122,7 @@ export const generateAnalyticsReport = (
         return {
             batchId,
             batchName: allBatches.find(b => b.id === batchId)?.name || 'Unknown',
-            avgGapsPerDay: totalGaps / DAYS_OF_WEEK.length,
+            avgGapsPerDay: totalGaps / workingDaysIndices.length,
             maxConsecutiveHours: totalMaxConsecutive
         };
     });
@@ -145,10 +166,11 @@ Based on these metrics, provide a qualitative comparison. Your response should b
 Focus on the practical impact. For example, a lower "Student Gaps" score means a better student experience. A lower "Workload Variance" means more equitable schedules for faculty. A higher "Score" is generally better, but the underlying reasons are more important.`;
 
     try {
-        const response = await ai.models.generateContent({
+        // FIX: Explicitly type the response from the Gemini API call to resolve the 'unknown' type error.
+        const response: GenerateContentResponse = await callGeminiWithRetry(() => ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: prompt,
-        });
+        }), { retries: 2, delayMs: 1500 });
         return response.text;
     } catch (error) {
         console.error("Gemini comparison failed:", error);
