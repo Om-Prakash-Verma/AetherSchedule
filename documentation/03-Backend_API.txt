@@ -1,0 +1,72 @@
+
+AetherSchedule - Documentation: Backend API (Hono)
+===================================================
+
+This document describes the backend API built with Hono, a lightweight and fast web framework for the edge. It covers routing, database interaction, and the data seeding process.
+
+---
+### 1. Framework and Entrypoint
+---
+
+- **Framework**: Hono. Chosen for its performance, small bundle size, and first-class support for serverless environments like Vercel Edge.
+- **Main Server File (`api/server.ts`)**: This is the heart of the backend. It initializes the Hono app, sets up middleware, and defines all API routes.
+- **Deployment Entrypoint (`api/index.ts`)**: This file is a simple wrapper that exports the Hono app handler for Vercel's Edge runtime. This keeps the server logic separate from the deployment-specific boilerplate.
+
+---
+### 2. Middleware
+---
+
+- **CORS (`hono/cors`)**: The API uses the `cors` middleware to allow requests from the frontend development server (`http://localhost:5173`). This is essential for local development.
+- **Error Handling (`app.onError`)**: A global error handler is defined to catch any unhandled exceptions in the route handlers. It logs the error and returns a standardized JSON error response with a 500 status code.
+
+---
+### 3. Routing
+---
+
+All API routes are prefixed with `/api`. The routes are organized by function.
+
+#### a. Data Fetching (GET)
+- Simple `app.get` routes are defined for each primary data type (e.g., `/api/subjects`, `/api/faculty`).
+- These handlers use the Drizzle query builder (`db.query...`) to fetch data and return it as JSON.
+
+#### b. Data Modification (CRUD - POST, DELETE)
+- **Generic CRUD Helper (`createCrudEndpoints`)**: For simple data types (`subjects`, `rooms`, `users`), a helper function is used to reduce boilerplate. It creates `POST` (for create/update) and `DELETE` handlers.
+- **Custom CRUD Logic**: For more complex data types, custom handlers are written:
+  - **Faculty (`/api/faculty`)**: The `POST` handler for faculty also automatically creates a corresponding `User` account for that faculty member, linking them together. The `DELETE` handler cleans up both the faculty record and their user account.
+  - **Departments (`/api/departments`)**: The `POST` handler automatically creates a "DepartmentHead" user account.
+  - **Batches (`/api/batches`)**: The `POST` handler is particularly complex. It handles creating/updating the batch, creating a "Student Rep" user account, and also processes all `FacultyAllocation` records for that batch in a single transaction.
+
+#### c. Scheduler Engine (POST)
+- **`/api/scheduler`**: The main endpoint that triggers the AI optimization process. It receives a list of `batchIds`, fetches all necessary data from the database, and calls `runOptimization` from the core engine.
+- **`/api/scheduler/diagnostics`**: Runs the "pre-flight check" (`runPreflightDiagnostics`) on a set of batches to find potential data issues before generation.
+- **`/api/scheduler/nlc`**: Accepts a timetable and a natural language command (e.g., "move this class"), passes it to the Gemini API via `applyNaturalLanguageCommand`, and returns the modified timetable.
+
+#### d. System and Data Portability (POST)
+- **`/api/reset-db`**: A "danger zone" endpoint that drops all tables from the database.
+- **`/api/data/import`**: Allows importing foundational data from a JSON file, which is useful for setting up a new environment. It carefully deletes old data in an order that respects foreign keys before inserting the new data.
+
+---
+### 4. Database Interaction
+---
+
+- **ORM**: Drizzle ORM. It provides a type-safe query builder that mirrors SQL syntax closely.
+- **Client Initialization (`db/index.ts`)**: It uses the `@neondatabase/serverless` driver to connect to the Neon Postgres database using the connection string from the `POSTGRES_URL` environment variable. The initialized `db` client is exported for use in the server.
+- **Querying**:
+  - `db.query.tableName.findMany()` is used for fetching lists of data.
+  - `db.insert(schema.tableName).values(...)` is used for creating new records.
+  - `db.update(schema.tableName).set(...)` is used for updating records.
+  - `db.delete(schema.tableName).where(...)` is used for deleting records.
+  - The `eq` and `inArray` helpers from Drizzle are used to build `WHERE` clauses.
+
+---
+### 5. Database Seeding
+---
+
+- **Purpose**: To populate a new, empty database with a set of realistic demo data, making the application usable immediately after setup.
+- **Seed Data (`api/seedData.ts`)**: This file defines the raw data for users, subjects, faculty, etc. It uses helper functions to generate consistent IDs.
+- **Seeding Logic (`api/server.ts -> seedDatabaseIfEmpty`)**:
+  1. It first checks if the `users` table has any records. If it does, seeding is skipped to prevent overwriting existing data.
+  2. If the database is empty, it inserts the data from `seedData.ts`.
+  3. **Insertion Order is Critical**: It inserts data in an order that respects foreign key constraints (e.g., `departments` are inserted before `batches` that reference them).
+  4. **Handling Circular Dependencies**: It cleverly handles the circular dependency between `users` and `faculty` (a user needs a `facultyId`, and a faculty record needs a `userId`). It first inserts faculty with a `null` `userId`, then inserts all users (which can now link to the faculty), and finally updates the faculty records with the correct `userId`.
+- **Execution**: The seeding process is run automatically as part of the `npm run dev` command via the `scripts/seed.ts` file.

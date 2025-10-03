@@ -1,0 +1,70 @@
+
+AetherSchedule - Documentation: Core Scheduler Engine
+======================================================
+
+This document provides a deep dive into the core logic of AetherSchedule, located in the `/core` directory. This is the heart of the application, responsible for generating, validating, and analyzing timetables.
+
+---
+### 1. Architecture: A Modular, Orchestrated Approach
+---
+
+The original monolithic `schedulerEngine.ts` has been refactored into a collection of smaller, more focused modules inside `/core/engine`. The main `core/schedulerEngine.ts` file now acts as a high-level orchestrator, making the overall process easier to understand.
+
+- **`core/schedulerEngine.ts`**: The entrypoint. Its `runOptimization` function executes the main genetic algorithm loop, calling functions from the other modules in a sequence defined by the Gemini strategy.
+- **`/core/engine/population.ts`**: Manages the collection of timetables (the "population").
+- **`/core/engine/fitness.ts`**: Scores the quality of individual timetables.
+- **`/core/engine/operators.ts`**: Performs the evolutionary actions (crossover, mutation).
+- **`/core/engine/gemini.ts`**: Handles all interactions with the Gemini AI.
+- **`/core/engine/helpers.ts`**: Contains small, reusable utility functions.
+
+---
+### 2. The Genetic Algorithm (GA) Workflow (`schedulerEngine.ts`)
+---
+
+The `runOptimization` function follows these steps:
+
+1.  **Get Strategy**: It first calls `getGeminiPhaseStrategy` to get a custom, multi-phase plan for the GA.
+2.  **Initialization**: It calls `initializePopulation` to create the initial set of random (but valid) timetables. This is the starting "gene pool."
+3.  **Evolutionary Loop**: It iterates through the phases and generations defined by the Gemini strategy. In each generation:
+    a. **Evaluation**: It calculates the "fitness score" for each timetable in the population using `calculateMetrics`.
+    b. **Sorting & Elitism**: The population is sorted by score, and the top solutions (defined by `ELITISM_COUNT`) are carried over to the next generation unchanged.
+    c. **Selection**: For the rest of the new population, it selects "parent" timetables using `selectParent` (a tournament selection method).
+    d. **Reproduction**: It applies a genetic operator (heuristic) to the selected parent(s) to create an "offspring." The specific operator is chosen probabilistically based on the current phase's strategy (`selectHeuristic`).
+    e. **Repair**: The new offspring may be invalid (e.g., have duplicate classes after a crossover). The `greedyRepair` function is called to fix it, ensuring every timetable in the population is always valid.
+4.  **Stagnation Handling**: During the loop, it checks if the best score has stopped improving. If it stagnates for too long, it either calls `geminiCreativeIntervention` for a creative boost or exits the loop early.
+5.  **Termination**: The loop ends after all generations are complete or a near-perfect score is found.
+6.  **Return Results**: The final population is sorted, and the top unique candidates are returned to the frontend.
+
+---
+### 3. Key Modules Explained
+---
+
+#### a. Population Management (`population.ts`)
+- **`initializePopulation`**: This is a critical function. It doesn't just create random timetables; it does so intelligently.
+  1. It first places all "Pinned Assignments" (fixed lectures) onto the grid. These are non-negotiable.
+  2. It calculates the remaining classes that need to be scheduled.
+  3. It then randomly places these remaining classes into empty, valid slots, ensuring that no hard constraints (faculty, room, or batch double-booking) are violated from the very beginning.
+- **`greedyRepair`**: This function takes a potentially invalid timetable (e.g., after a crossover) and makes it valid. It identifies missing or duplicate classes and intelligently adds/removes them to satisfy the curriculum requirements, working around the immutable Pinned Assignments.
+
+#### b. Fitness Calculation (`fitness.ts`)
+- **`calculateMetrics`**: This is the GA's "fitness function." It takes a timetable and scores it based on "soft constraints" (preferences, not hard rules).
+- **Scoring Logic**: It starts with a high score (e.g., 1000) and subtracts penalty points for each violation, weighted by the values in the `globalConstraints` settings.
+  - **Student Gaps**: Penalizes empty slots between classes for a student batch.
+  - **Faculty Gaps**: Penalizes empty slots between classes for a faculty member.
+  - **Faculty Workload Distribution**: Calculates the standard deviation of teaching hours among all faculty. A higher value (more variance) results in a larger penalty, promoting equitable schedules.
+  - **Preference Violations**: Penalizes classes scheduled in a faculty member's "unavailable" slots.
+
+#### c. Genetic Operators (`operators.ts`)
+- These functions modify timetables to create new solutions.
+- **`dayWiseCrossover`**: Combines two parent timetables by taking some days from parent 1 and the remaining days from parent 2 to create a new child.
+- **`swapMutate`**: A simple mutation that picks two random classes in a timetable and swaps their positions.
+- **`moveMutate`**: A more complex mutation that picks a random class, removes it, and tries to find a new valid empty slot for it elsewhere in the schedule.
+- **`simulatedAnnealing`**: A fine-tuning operator that makes small swaps. It has a chance to accept a "worse" swap to avoid getting stuck in a sub-optimal solution, with the chance decreasing over time.
+
+#### d. Conflict Checker (`conflictChecker.ts`)
+- **Purpose**: Used by the frontend's visual editor for real-time validation. It is NOT used during the GA's main loop, as the repair function ensures validity.
+- **Functionality**: Takes a full timetable grid and checks every single assignment for violations, including:
+  - Double-bookings (faculty, room, batch).
+  - Resource suitability (e.g., room capacity, lab vs. lecture hall).
+  - Constraint violations (e.g., faculty unavailability, clashing with a pinned event).
+- It returns a `Map` where the key is the assignment ID and the value is a list of conflict messages for that assignment.

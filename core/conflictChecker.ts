@@ -159,16 +159,28 @@ export class ConflictChecker {
         // Pinned Assignment Clash
         for (const facultyId of assignment.facultyIds) {
             const pinClash = this.expandedPins.get(`${assignment.day}-${assignment.slot}-f-${facultyId}`);
-            if (pinClash) {
+            // A clash only occurs if a pin exists AND the current assignment is NOT the one defined by the pin.
+            if (pinClash && (
+                pinClash.pin.batchId !== assignment.batchId ||
+                pinClash.pin.subjectId !== assignment.subjectId ||
+                pinClash.pin.facultyId !== facultyId
+            )) {
                  conflicts.push({ type: 'Pinned Assignment Clash', message: `Clashes with pinned event: '${pinClash.pin.name}' for faculty ${this.faculty.get(facultyId)?.name}.` });
             }
         }
         const roomPinClash = this.expandedPins.get(`${assignment.day}-${assignment.slot}-r-${assignment.roomId}`);
-        if(roomPinClash) {
+        if (roomPinClash && (
+            roomPinClash.pin.batchId !== assignment.batchId ||
+            roomPinClash.pin.subjectId !== assignment.subjectId ||
+            roomPinClash.pin.roomId !== assignment.roomId
+        )) {
             conflicts.push({ type: 'Pinned Assignment Clash', message: `Clashes with pinned event: '${roomPinClash.pin.name}' for room ${this.rooms.get(assignment.roomId)?.name}.` });
         }
         const batchPinClash = this.expandedPins.get(`${assignment.day}-${assignment.slot}-b-${assignment.batchId}`);
-        if (batchPinClash) {
+        if (batchPinClash && (
+            batchPinClash.pin.batchId !== assignment.batchId ||
+            batchPinClash.pin.subjectId !== assignment.subjectId
+        )) {
             conflicts.push({ type: 'Pinned Assignment Clash', message: `Clashes with pinned event: '${batchPinClash.pin.name}' for batch ${this.batches.get(assignment.batchId)?.name}.` });
         }
 

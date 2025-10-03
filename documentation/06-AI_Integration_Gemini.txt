@@ -1,0 +1,67 @@
+
+AetherSchedule - Documentation: AI Integration (Google Gemini)
+===============================================================
+
+This document details how the Google Gemini API is integrated into AetherSchedule. The application leverages Gemini not just for content generation, but as a core component of its scheduling and analytics engines. All Gemini-related logic is centralized in `/core/engine/gemini.ts` and `/core/analyticsEngine.ts`.
+
+---
+### 1. API Client and Resilience
+---
+
+- **Client**: The application uses the `@google/genai` SDK to interact with the Gemini API. The client is initialized in each relevant file with the API key from `process.env.API_KEY`.
+- **Resilience (`callGeminiWithRetry`)**: To handle potential API service disruptions (like 503 Overloaded errors), a helper function wraps all API calls. It implements an exponential backoff retry mechanism, making the AI features more robust.
+
+---
+### 2. The Three-Level AI Strategy
+---
+
+AetherSchedule employs a unique, multi-layered approach to AI integration, where Gemini plays three distinct roles in the optimization process. This logic is primarily located in `core/engine/gemini.ts`.
+
+#### Level 1: The Master Strategist (`getGeminiPhaseStrategy`)
+- **Purpose**: To make the genetic algorithm (GA) more efficient by providing it with a custom "game plan."
+- **How it Works**: Before the GA starts, this function sends a summary of the scheduling problem (number of batches, classes, constraints, etc.) to Gemini. It asks the AI to devise a multi-phase strategy.
+- **Output**: Gemini returns a JSON object defining several phases. Each phase specifies:
+  - The number of `generations` to run.
+  - The probability of using each genetic operator (`SWAP_MUTATE`, `DAY_WISE_CROSSOVER`, etc.).
+- **Impact**: This allows the GA to be more adaptive. Early phases might focus on "exploration" (broad changes with crossover), while later phases focus on "exploitation" (fine-tuning with small swaps and simulated annealing).
+
+#### Level 2: The Creative Interventionist (`geminiCreativeIntervention`)
+- **Purpose**: To prevent the GA from getting stuck in a "local optimum" (a good, but not the best, solution).
+- **How it Works**: During the GA loop in `schedulerEngine.ts`, if the best score fails to improve for a set number of generations (stagnation), this function is triggered. It sends a summary of the current best timetable to Gemini and asks for a "creative, out-of-the-box" swap between two classes.
+- **Output**: Gemini returns the IDs of two classes to swap.
+- **Impact**: This acts as a powerful "jolt" to the system, knocking the algorithm out of its rut and allowing it to explore different parts of the solution space, often leading to a breakthrough.
+
+#### Level 3: The Self-Tuning Judge (`tuneConstraintWeightsWithGemini`)
+- **Purpose**: To allow the system to learn from human feedback over time.
+- **How it Works**: This function would take faculty feedback (ratings and comments) on past timetables and send it to Gemini. It would ask the AI to analyze the sentiment and suggest adjustments to the soft constraint weights. For example, if many faculty complain about morning gaps, Gemini might suggest increasing the `facultyGapWeight`.
+- **Status**: This function is implemented but is not currently called within the main application loop. It represents a powerful potential future enhancement.
+
+---
+### 3. Other Gemini-Powered Features
+---
+
+#### a. Pre-flight Diagnostics (`runPreflightDiagnostics`)
+- **Purpose**: To identify data integrity issues *before* running the complex and resource-intensive scheduler.
+- **How it Works**: While this feature's logic is currently implemented with standard code (not an AI call), it embodies the principle of proactive intelligence. It checks for issues like:
+  - Subjects that no faculty can teach.
+  - Faculty members with no assigned subjects.
+  - Curriculums with subjects that have no qualified teachers.
+- **Impact**: Prevents the scheduler from failing midway through a run due to impossible constraints, providing clear, actionable feedback to the user instead.
+
+#### b. Natural Language Commands (`applyNaturalLanguageCommand`)
+- **Purpose**: To allow users to make edits using plain English.
+- **How it Works**: When a user types a command like "Move DS Lab for CS S3 A to Tuesday morning" in the AI Command Bar on the `Scheduler` page:
+  1. The frontend sends the current timetable and the command to the `/api/scheduler/nlc` endpoint.
+  2. The backend calls `applyNaturalLanguageCommand`.
+  3. This function constructs a detailed prompt for Gemini, including the command, a list of all current class assignments, and the available days/time slots.
+  4. It asks Gemini to parse the command and return a structured JSON object describing the action (e.g., `{ "action": "move", "class_subject_code": "BCS351", "target_day": "Tuesday", ... }`).
+  5. The backend then executes this structured action on the timetable grid and returns the modified grid.
+- **Impact**: Provides a highly intuitive and powerful way for users to interact with and refine the schedule.
+
+#### c. AI Timetable Comparison (`compareTimetablesWithGemini` in `analyticsEngine.ts`)
+- **Purpose**: To provide a qualitative, human-readable summary of the differences between two timetable candidates.
+- **How it Works**: When a user selects two candidates and clicks "Compare with AI":
+  1. The frontend sends the two `GeneratedTimetable` objects to the `/api/scheduler/compare` endpoint.
+  2. The backend extracts the key metrics (score, gaps, workload variance) for both.
+  3. It sends these metrics to Gemini with a prompt asking it to act as a university administrator and provide a qualitative analysis, including a summary, pros/cons, and a final recommendation.
+- **Impact**: Helps users make more informed decisions by translating raw numbers into practical, impact-focused insights.
