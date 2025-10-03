@@ -1,9 +1,10 @@
 import React from 'react';
 import { GlassPanel } from '../components/GlassPanel';
+// FIX: Import missing icons 'CheckCircle' and 'ArrowRight'.
 import {
   Users, ShieldCheck, Database, Cpu, Bot,
   FileCheck2, UserCheck, CalendarDays,
-  BookOpen, Building, UserCog, Lock, Sliders, BarChart4, Pencil, Send, Eye, GraduationCap, ClipboardCheck, Dna
+  BookOpen, Building, UserCog, Lock, Sliders, BarChart4, Pencil, Send, Eye, GraduationCap, ClipboardCheck, Dna, GripVertical, AlertTriangle, CheckCircle, ArrowRight
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 
@@ -32,13 +33,11 @@ const FeatureSection: React.FC<{
   title: string;
   description: string;
   children: React.ReactNode;
-  image: string;
-  imageAlt: string;
+  visual: React.ReactNode;
   reverse?: boolean;
-}> = ({ step, title, description, children, image, imageAlt, reverse = false }) => (
+}> = ({ step, title, description, children, visual, reverse = false }) => (
   <div className="grid md:grid-cols-2 gap-12 items-center">
-    {/* FIX: Replaced invalid object syntax in cn() with a ternary operator for conditional classes. */}
-    <div className={cn(reverse ? "md:order-first" : "md:order-last")}>
+    <div className={cn(reverse ? "md:order-last" : "")}>
       <div className="flex items-center gap-4 mb-4">
         <div className="flex-shrink-0 w-12 h-12 flex items-center justify-center rounded-full bg-accent/20 border border-accent/30 font-bold text-accent text-lg">{step}</div>
         <div>
@@ -48,11 +47,8 @@ const FeatureSection: React.FC<{
       <p className="text-text-muted mb-6">{description}</p>
       <div className="space-y-4">{children}</div>
     </div>
-    {/* FIX: Replaced invalid object syntax in cn() with short-circuit evaluation for conditional classes. */}
-    <div className={cn("flex items-center justify-center animate-fade-in-up", reverse && "md:order-last")}>
-        <GlassPanel className="p-2">
-          <img src={image} alt={imageAlt} className="rounded-lg shadow-2xl" />
-        </GlassPanel>
+    <div className="flex items-center justify-center animate-fade-in-up">
+        {visual}
     </div>
   </div>
 );
@@ -65,6 +61,85 @@ const RoleCard: React.FC<{ icon: React.ElementType; title: string; children: Rea
         <h4 className="font-bold text-white text-lg">{title}</h4>
         <p className="text-sm text-text-muted mt-2">{children}</p>
     </GlassPanel>
+);
+
+// --- NEW VISUAL COMPONENTS ---
+
+const DataBlueprintVisual = () => (
+    <GlassPanel className="p-6 relative w-full max-w-md aspect-square flex items-center justify-center bg-grid-pattern">
+        <div className="absolute inset-0 bg-gradient-radial from-bg/0 via-bg/80 to-bg" />
+        <div className="relative flex items-center justify-center">
+            <Database className="w-20 h-20 text-accent/80" />
+            {[BookOpen, Users, Building].map((Icon, i) => (
+                <div key={i} className="absolute p-3 bg-panel border border-border rounded-xl shadow-lg" style={{ transform: `rotate(${i * 120}deg) translate(120px) rotate(-${i * 120}deg)` }}>
+                    <Icon className="w-8 h-8 text-text-muted" />
+                </div>
+            ))}
+        </div>
+    </GlassPanel>
+);
+
+const ConstraintsVisual = () => (
+    <GlassPanel className="p-4 w-full max-w-md">
+        <div className="grid grid-cols-5 gap-2">
+            {Array.from({ length: 15 }).map((_, i) => {
+                const isAvailable = [0, 1, 4, 5, 7, 8, 10, 11, 14].includes(i);
+                return (
+                    <div key={i} className={cn("h-12 rounded-md flex items-center justify-center", isAvailable ? "bg-green-500/10" : "bg-panel-strong/50")}>
+                        {isAvailable && <CheckCircle className="w-5 h-5 text-green-500/50" />}
+                    </div>
+                )
+            })}
+        </div>
+    </GlassPanel>
+);
+
+const AIEngineVisual = () => (
+    <div className="flex items-center justify-center gap-4 w-full max-w-md">
+        <GlassPanel className="p-2 grid grid-cols-3 gap-1">
+            {[...Array(9)].map((_, i) => <div key={i} className={cn("w-6 h-6 rounded-sm", Math.random() > 0.5 ? 'bg-accent/30' : 'bg-panel-strong')} />)}
+        </GlassPanel>
+        <ArrowRight className="w-12 h-12 text-accent shrink-0" />
+        <GlassPanel className="p-2 grid grid-cols-3 gap-1">
+            {[...Array(9)].map((_, i) => <div key={i} className={cn("w-6 h-6 rounded-sm", i % 4 === 0 ? 'bg-accent/80' : 'bg-panel-strong')} />)}
+        </GlassPanel>
+    </div>
+);
+
+const CollaborationVisual = () => (
+    <GlassPanel className="p-4 w-full max-w-md group">
+        <div className="grid grid-cols-4 gap-2">
+            {[...Array(12)].map((_, i) => {
+                const isOccupied = [1, 3, 6, 9, 11].includes(i);
+                const isConflict = i === 9;
+                return (
+                    <div key={i} className={cn("h-16 rounded-lg relative", isOccupied ? 'bg-accent/20' : 'bg-panel-strong')}>
+                        {isOccupied && <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><GripVertical size={16} className="text-text-muted/50" /></div>}
+                        {isConflict && <div className="absolute bottom-2 left-2"><AlertTriangle size={16} className="text-danger" /></div>}
+                    </div>
+                )
+            })}
+        </div>
+    </GlassPanel>
+);
+
+const DeliveryVisual = () => (
+    <div className="relative w-full max-w-md h-72">
+        <GlassPanel className="absolute top-0 left-0 w-full h-full p-4">
+            <div className="h-full border border-border rounded-lg p-2 bg-panel-strong/50">
+                <div className="grid grid-cols-5 gap-2">
+                    {[...Array(15)].map((_, i) => <div key={i} className={cn("h-6 rounded-sm", [1,6,8,13].includes(i) ? 'bg-accent/50' : 'bg-panel/50')} />)}
+                </div>
+            </div>
+        </GlassPanel>
+        <GlassPanel className="absolute -bottom-4 -right-4 w-32 h-56 p-2 border-2 border-accent/50">
+             <div className="h-full border border-border rounded p-1 bg-panel-strong/50">
+                <div className="grid grid-cols-2 gap-1">
+                    {[...Array(10)].map((_, i) => <div key={i} className={cn("h-6 rounded-sm", [1,5,8].includes(i) ? 'bg-accent/50' : 'bg-panel/50')} />)}
+                </div>
+            </div>
+        </GlassPanel>
+    </div>
 );
 
 
@@ -86,8 +161,7 @@ const HowItWorks: React.FC = () => {
                 step="01" 
                 title="Building the Digital Blueprint"
                 description="Before scheduling, we create a perfect digital reflection of your institution's resources and needs. This becomes the single source of truth for the entire system, ensuring the AI has all the pieces to the puzzle."
-                image="https://storage.googleapis.com/aistudio-hosting/generations/a41f6e1e-28b3-466a-8d77-2e11a3d13239/data-management-visual.png"
-                imageAlt="A screenshot of the data management interface showing lists of subjects, faculty, and rooms."
+                visual={<DataBlueprintVisual />}
             >
                 <SubStepCard icon={BookOpen} title="Subjects & Curriculum">Define every course, its type (Theory, Lab), and weekly hours. The AI uses this to ensure every course gets the time it needs.</SubStepCard>
                 <SubStepCard icon={Users} title="Faculty & Expertise">Map professors to their subject expertise and teaching preferences. This is a key ingredient for both a valid schedule and faculty satisfaction.</SubStepCard>
@@ -98,8 +172,7 @@ const HowItWorks: React.FC = () => {
                 step="02" 
                 title="Defining the Rules of the Road"
                 description="Constraints are the essential boundaries that ensure every generated schedule is practical, fair, and physically possible. Think of our AI as a GPS—you tell it the destination, and these are the rules of the road."
-                image="https://storage.googleapis.com/aistudio-hosting/generations/a41f6e1e-28b3-466a-8d77-2e11a3d13239/constraints-visual.png"
-                imageAlt="A visual of the faculty availability matrix, showing green available slots and gray unavailable ones."
+                visual={<ConstraintsVisual />}
                 reverse={true}
             >
                 <SubStepCard icon={UserCheck} title="Hard Constraints (The Unbreakables)">These are the laws of physics. A professor cannot be in two places at once. The AI treats these rules as absolute and will never violate them.</SubStepCard>
@@ -110,8 +183,7 @@ const HowItWorks: React.FC = () => {
                 step="03" 
                 title="Unleashing the AI Engine"
                 description="With the blueprint and rules in place, you simply select the student batches and click 'Generate.' This activates a powerful hyper-heuristic genetic algorithm, guided by Google Gemini, that explores millions of possibilities at once."
-                image="https://storage.googleapis.com/aistudio-hosting/generations/a41f6e1e-28b3-466a-8d77-2e11a3d13239/ai-engine-visual.png"
-                imageAlt="An abstract visualization of a neural network or algorithm in action, with glowing nodes and connections."
+                visual={<AIEngineVisual />}
             >
                 <SubStepCard icon={Bot} title="The Gemini Game Plan">Before starting, Gemini creates a smart, multi-phase strategy for the genetic algorithm to follow, making the optimization process incredibly efficient.</SubStepCard>
                 <SubStepCard icon={Dna} title="Survival of the Fittest">The AI evolves hundreds of random timetables over thousands of generations. The best schedules 'survive' and combine traits to create even better offspring, while weak ones are discarded.</SubStepCard>
@@ -121,8 +193,7 @@ const HowItWorks: React.FC = () => {
                 step="04" 
                 title="AI-Human Collaboration"
                 description="The AI does 99% of the heavy lifting, producing several near-perfect timetables in minutes. Now, human expertise provides the crucial final touch, turning an optimal solution into the perfect one for your institution."
-                image="https://storage.googleapis.com/aistudio-hosting/generations/a41f6e1e-28b3-466a-8d77-2e11a3d13239/collaboration-visual.png"
-                imageAlt="A screenshot of the scheduler interface, showing a timetable being edited with drag-and-drop handles and conflict highlighting."
+                visual={<CollaborationVisual />}
                 reverse={true}
             >
                  <SubStepCard icon={Eye} title="Compare & Choose">The AI presents its top candidates with a clear report card of their strengths. You choose the one that best aligns with your priorities, like student convenience or faculty satisfaction.</SubStepCard>
@@ -134,8 +205,7 @@ const HowItWorks: React.FC = () => {
                 step="05" 
                 title="Seamless Delivery to Everyone"
                 description="With a single click, the approved timetable is published. The system delivers this information to every single person in the clearest way possible, eliminating confusion entirely."
-                image="https://storage.googleapis.com/aistudio-hosting/generations/a41f6e1e-28b3-466a-8d77-2e11a3d13239/delivery-visual.png"
-                imageAlt="A mock-up showing a personalized timetable view on a desktop screen and a mobile phone."
+                visual={<DeliveryVisual />}
             >
                 <SubStepCard icon={Users} title="Personalized Views">No more giant, overwhelming spreadsheets. A student logs in and sees only their schedule. A professor sees only the classes they are teaching. All the noise is filtered out.</SubStepCard>
                 <SubStepCard icon={FileCheck2} title="Universal Access">Integrate with the tools your community already uses. Export personal timetables to Google/Outlook Calendar or download as a clean PDF/CSV file with one click.</SubStepCard>

@@ -77,6 +77,36 @@ const TechCard: React.FC<{ icon: React.ElementType, title: string, children: Rea
     </GlassPanel>
 );
 
+const WorkflowChart: React.FC = () => {
+    const steps = [
+        { icon: Lock, title: "1. Define Your World", description: "Input subjects, faculty, rooms, and constraints to create a digital blueprint of your institution." },
+        { icon: Sliders, title: "2. Generate with AI", description: "Select batches and let the AI engine produce multiple, optimized timetable candidates." },
+        { icon: CheckCircle, title: "3. Refine & Publish", description: "Compare candidates, make manual tweaks, and publish the final schedule with one click." }
+    ];
+
+    return (
+        <div className="flex flex-col md:flex-row items-stretch justify-center gap-4 md:gap-0">
+            {steps.map((step, index) => (
+                <React.Fragment key={index}>
+                    <div className="flex md:flex-col items-center gap-4 animate-flow-in" style={{ animationDelay: `${index * 200}ms` }}>
+                        <div className="p-3 bg-[hsl(var(--accent-hsl)_/_0.1)] border border-[hsl(var(--accent-hsl)_/_0.2)] rounded-lg">
+                            <step.icon className="w-6 h-6 text-[var(--accent)]" />
+                        </div>
+                        <div className="text-left md:text-center">
+                            <h4 className="font-bold text-[var(--text-white)]">{step.title}</h4>
+                            <p className="text-sm text-[var(--text-muted)] hidden md:block">{step.description}</p>
+                        </div>
+                    </div>
+                    {index < steps.length - 1 && (
+                        <div className="h-8 w-px md:h-auto md:w-16 bg-border/50 mx-auto md:mx-0 md:my-auto animate-draw-line" style={{ animationDelay: `${150 + index * 200}ms` }}/>
+                    )}
+                </React.Fragment>
+            ))}
+        </div>
+    );
+};
+
+
 const Homepage: React.FC<HomepageProps> = (props) => {
   return (
     <PublicPageLayout {...props} currentPage="Home">
@@ -144,8 +174,8 @@ const Homepage: React.FC<HomepageProps> = (props) => {
                             <div className="flex items-start gap-4"><div className="p-2 bg-[hsl(var(--accent-hsl)_/_0.1)] border border-[hsl(var(--accent-hsl)_/_0.2)] rounded-lg mt-1"><CheckCircle className="w-6 h-6 text-[var(--accent)]"/></div><div><h4 className="font-bold text-[var(--text-white)]">3. Refine & Publish</h4><p className="text-sm text-[var(--text-muted)]">Compare candidates, make manual tweaks, and publish the final schedule with one click.</p></div></div>
                         </div>
                     </div>
-                    <div className="hidden md:block">
-                        <img src="https://storage.googleapis.com/aistudio-hosting/generations/b683ea1c-0112-4f3a-9694-3983a0f124c8/dark_flowchart.png" alt="A dark-themed flowchart showing the three steps of the scheduling process: Define, Generate, and Refine" className="rounded-lg object-cover" />
+                    <div className="hidden md:flex items-center justify-center p-4">
+                        <WorkflowChart />
                     </div>
                 </div>
             </GlassPanel>
