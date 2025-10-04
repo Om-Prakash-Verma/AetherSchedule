@@ -49,8 +49,9 @@ const DataManagement: React.FC = () => {
     
     const { data: currentData, isLoading: currentDataIsLoading, saveFn, deleteFn } = dataMap[activeTab];
 
-    const columns = useMemo(() => getColumns(activeTab, { subjects, faculty, departments, users, batches }), 
-        [activeTab, subjects, faculty, departments, users, batches]
+    // FIX: Pass 'rooms' to getColumns to satisfy its updated DataMap type.
+    const columns = useMemo(() => getColumns(activeTab, { subjects, faculty, departments, users, batches, rooms }), 
+        [activeTab, subjects, faculty, departments, users, batches, rooms]
     );
 
     // --- MUTATIONS ---

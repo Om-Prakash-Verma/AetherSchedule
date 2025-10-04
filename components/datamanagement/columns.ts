@@ -3,12 +3,14 @@ import React from 'react';
 import { AlertTriangle, Users as UsersIcon } from 'lucide-react';
 import type { Subject, Faculty, Room, Batch, Department, User } from '../../types';
 
+// FIX: Add 'rooms' to the DataMap type to match the data structure and resolve the type error.
 type DataMap = {
     subjects: Subject[];
     faculty: Faculty[];
     departments: Department[];
     users: User[];
     batches: Batch[];
+    rooms: Room[];
 };
 
 type DataType = keyof DataMap;
