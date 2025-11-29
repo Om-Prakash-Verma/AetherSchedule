@@ -1,18 +1,21 @@
-// FIX: Removed invalid file header comment that was causing a syntax error.
-import React from 'react';
+import React, { useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { Users, Book, Building, School } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import * as api from '../services';
 
 const Dashboard: React.FC = () => {
-    const { user } = useAppContext();
+    const { 
+        user, subjects, faculty, rooms, batches,
+        fetchSubjects, fetchFaculty, fetchRooms, fetchBatches
+    } = useAppContext();
 
-    const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
-    const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
-    const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
-    const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
+    useEffect(() => {
+        // Fetch all data needed for the stat cards
+        fetchSubjects();
+        fetchFaculty();
+        fetchRooms();
+        fetchBatches();
+    }, [fetchSubjects, fetchFaculty, fetchRooms, fetchBatches]);
 
     const stats = [
         { label: 'Total Subjects', value: subjects.length, icon: Book },
@@ -29,12 +32,8 @@ const Dashboard: React.FC = () => {
             </GlassPanel>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {stats.map((stat, index) => (
-                    <GlassPanel 
-                        key={stat.label} 
-                        className="p-6 animate-fade-in-up transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_0_20px_hsl(var(--accent-hsl)_/_0.2)]"
-                        style={{ animationDelay: `${index * 100}ms`}}
-                    >
+                {stats.map(stat => (
+                    <GlassPanel key={stat.label} className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
                                 <p className="text-sm text-text-muted">{stat.label}</p>

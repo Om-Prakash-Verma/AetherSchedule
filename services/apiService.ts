@@ -1,4 +1,4 @@
-import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableFeedback, TimetableSettings, Constraints, Substitution, DiagnosticIssue, TimetableGrid, AnalyticsReport, FacultyAllocation, RankedSubstitute } from '../types';
+import type { User, Subject, Faculty, Room, Batch, Department, PinnedAssignment, PlannedLeave, FacultyAvailability, GeneratedTimetable, GlobalConstraints, TimetableFeedback, TimetableSettings, Constraints, Substitution, ClassAssignment, FacultyAllocation } from '../types';
 
 const apiFetch = async (url: string, options: RequestInit = {}) => {
     const response = await fetch(url, {
@@ -38,39 +38,12 @@ export const getSettings = (): Promise<{ globalConstraints: GlobalConstraints, t
 
 
 // --- SCHEDULER ---
-export const runScheduler = (batchIds: string[], baseTimetable?: TimetableGrid): Promise<GeneratedTimetable[]> => {
+export const runScheduler = (batchIds: string[]): Promise<GeneratedTimetable[]> => {
     return apiFetch('/api/scheduler', {
-        method: 'POST',
-        body: JSON.stringify({ batchIds, baseTimetable }),
-    });
-};
-
-export const runDiagnostics = (batchIds: string[]): Promise<DiagnosticIssue[]> => {
-    return apiFetch('/api/scheduler/diagnostics', {
         method: 'POST',
         body: JSON.stringify({ batchIds }),
     });
 };
-
-export const applyNLC = (timetable: TimetableGrid, command: string): Promise<TimetableGrid> => {
-     return apiFetch('/api/scheduler/nlc', {
-        method: 'POST',
-        body: JSON.stringify({ timetable, command }),
-    });
-};
-
-export const compareTimetables = (candidate1: GeneratedTimetable, candidate2: GeneratedTimetable): Promise<{ analysis: string }> => {
-    return apiFetch('/api/scheduler/compare', {
-        method: 'POST',
-        body: JSON.stringify({ candidate1, candidate2 }),
-    });
-};
-
-// --- ANALYTICS ---
-export const getAnalyticsReport = (timetableId: string): Promise<AnalyticsReport> => {
-    return apiFetch(`/api/analytics/report/${timetableId}`);
-};
-
 
 // --- TIMETABLE MANAGEMENT ---
 export const saveTimetable = (timetable: GeneratedTimetable): Promise<GeneratedTimetable> => {
@@ -119,10 +92,10 @@ export const saveFacultyAvailability = (data: FacultyAvailability): Promise<Facu
 };
 
 // --- SUBSTITUTIONS ---
-export const findSubstitutes = (assignmentId: string, currentTimetableGrid: TimetableGrid): Promise<RankedSubstitute[]> => {
+export const findSubstitutes = (assignmentId: string): Promise<any[]> => {
     return apiFetch('/api/substitutes/find', {
         method: 'POST',
-        body: JSON.stringify({ assignmentId, currentTimetableGrid }),
+        body: JSON.stringify({ assignmentId }),
     });
 };
 

@@ -1,85 +1,126 @@
-
-
 import React, { useState } from 'react';
+import { University, ArrowLeft, Mail } from 'lucide-react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
-import { University, ArrowLeft, Loader2 } from 'lucide-react';
 import * as api from '../services';
-import { useQuery } from '@tanstack/react-query';
 
-interface LoginPageProps {
-  onBackToHome: () => void;
-}
+const quickLoginUsers = [
+  { label: 'Super Admin', email: 'super.admin@test.com' },
+  { label: 'Manager', email: 'manager@test.com' },
+  { label: 'HOD (CS)', email: 'cs.hod@test.com' },
+  { label: 'Faculty (Swati)', email: 'ms_swati@test.com' },
+  // FIX: Restored the student quick-login button to allow demonstration of student views.
+  { label: 'Student (CS S3 A)', email: 'cs_s3_a@test.com' },
+  { label: 'Faculty (P. Singhal)', email: 'ms_pooja_singhal@test.com' },
+];
 
-const LoginPage: React.FC<LoginPageProps> = ({ onBackToHome }) => {
-  const { login: appLogin } = useAppContext();
-  const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: api.getUsers });
-  const [selectedUserEmail, setSelectedUserEmail] = useState('');
+const LoginPage: React.FC<{ onBackToHome: () => void; }> = ({ onBackToHome }) => {
+  const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const { login } = useAppContext();
   const toast = useToast();
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedUserEmail) {
-      toast.error('Please select a user to log in.');
-      return;
-    }
+  const handleLoginAttempt = async (loginEmail: string) => {
     setIsLoading(true);
     try {
-      const user = await api.login(selectedUserEmail);
-      toast.success(`Welcome, ${user.name}!`);
-      appLogin(user);
+      // FIX: Removed incorrect email modification logic. 
+      // The loginEmail from the quick login buttons is now used directly.
+      const user = await api.login(loginEmail);
+      login(user);
+      toast.success(`Welcome back, ${user.name}!`);
     } catch (error: any) {
-      toast.error(error.message || 'Login failed. Please try again.');
+      toast.error(error.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-4">
-      <GlassPanel className="w-full max-w-md p-8 animate-fade-in-up">
-        <div className="text-center mb-8">
-          <University className="mx-auto text-[var(--accent)] h-12 w-12 mb-4" />
-          <h1 className="text-3xl font-bold text-[var(--text-white)]">Sign In to AetherSchedule</h1>
-          <p className="text-[var(--text-muted)] mt-2">Select a user profile to proceed.</p>
-        </div>
-        
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label htmlFor="user-select" className="block text-sm font-medium text-[var(--text-muted)] mb-1">
-              Select User Profile (Demo)
-            </label>
-            <select
-              id="user-select"
-              value={selectedUserEmail}
-              onChange={(e) => setSelectedUserEmail(e.target.value)}
-              className="glass-input w-full"
-              required
-            >
-              <option value="" disabled>-- Select a user --</option>
-              {users.map(user => (
-                <option key={user.id} value={user.email}>
-                  {user.name} ({user.role})
-                </option>
-              ))}
-            </select>
-          </div>
-          
-          <GlassButton type="submit" className="w-full py-3" disabled={isLoading}>
-            {isLoading ? <Loader2 className="animate-spin" /> : 'Sign In'}
-          </GlassButton>
-        </form>
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      toast.error('Please enter your email address.');
+      return;
+    }
+    await handleLoginAttempt(email);
+  };
+  
+  const handleQuickLogin = (quickEmail: string) => {
+      setEmail(quickEmail);
+      handleLoginAttempt(quickEmail);
+  };
 
-        <div className="mt-6 text-center">
-            <button onClick={onBackToHome} className="text-sm text-[var(--text-muted)] hover:text-[var(--text-white)] flex items-center justify-center gap-2 mx-auto">
-                <ArrowLeft size={14} />
-                Back to Homepage
-            </button>
-        </div>
-      </GlassPanel>
+  return (
+    <div className="min-h-screen bg-bg text-white font-sans flex flex-col items-center justify-center p-4 relative">
+        <GlassButton 
+            variant="secondary"
+            onClick={onBackToHome}
+            className="absolute top-4 left-4 sm:top-6 sm-left-6"
+            icon={ArrowLeft}
+        >
+            Back to Home
+        </GlassButton>
+        
+        <GlassPanel className="w-full max-w-md p-8">
+            <div className="text-center mb-8">
+                <div className="inline-flex items-center gap-3">
+                    <University className="text-[var(--accent)]" size={32} />
+                    <h1 className="text-2xl font-bold">AetherSchedule</h1>
+                </div>
+                <p className="text-text-muted mt-2">Sign in to access the scheduling dashboard.</p>
+            </div>
+
+            <form onSubmit={handleLogin} className="space-y-6">
+                <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-text-muted mb-2">Email Address</label>
+                    <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
+                        <input
+                            id="email"
+                            name="email"
+                            type="email"
+                            autoComplete="email"
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="glass-input w-full pl-10"
+                            placeholder="e.g., admin@university.edu"
+                        />
+                    </div>
+                </div>
+
+                <div>
+                    <GlassButton type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? 'Signing in...' : 'Sign In'}
+                    </GlassButton>
+                </div>
+            </form>
+
+             <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-[var(--border)]" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                    <span className="bg-panel px-2 text-text-muted">Or quick login</span>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {quickLoginUsers.map(user => (
+                    <GlassButton
+                        key={user.email}
+                        variant="secondary"
+                        className="text-xs py-1.5"
+                        onClick={() => handleQuickLogin(user.email)}
+                        disabled={isLoading}
+                    >
+                        {user.label}
+                    </GlassButton>
+                ))}
+            </div>
+
+        </GlassPanel>
     </div>
   );
 };

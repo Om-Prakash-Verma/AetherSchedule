@@ -4,8 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AetherSchedule - Smart Timetable Scheduler</title>
-    <meta name="theme-color" content="#0d1117" />
-    <link rel="manifest" href="/manifest.json" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -35,27 +33,15 @@
     "@hono/zod-validator": "https://aistudiocdn.com/@hono/zod-validator@^0.7.3",
     "dotenv/": "https://aistudiocdn.com/dotenv@^17.2.2/",
     "@hono/node-server": "https://aistudiocdn.com/@hono/node-server@^1.19.4",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^0.19.0",
-    "@tanstack/react-query": "https://esm.sh/@tanstack/react-query@5.51.1",
-    "process": "https://aistudiocdn.com/process@^0.11.10"
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^0.19.0"
   }
 }
 </script>
+<link rel="stylesheet" href="/index.css">
 </head>
 <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').then(registration => {
-            console.log('SW registered: ', registration);
-          }).catch(registrationError => {
-            console.log('SW registration failed: ', registrationError);
-          });
-        });
-      }
-    </script>
 </body>
 </html>

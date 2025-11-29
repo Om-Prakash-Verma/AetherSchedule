@@ -64,7 +64,7 @@ export const BatchSelectorModal: React.FC<BatchSelectorModalProps> = ({ isOpen, 
             <div className="flex flex-col gap-4">
                 <GlassButton 
                     variant="secondary" 
-                    className="w-full text-sm py-2 bg-panel hover:bg-panel-strong"
+                    className="w-full text-sm py-2 bg-panel hover:bg-white/10"
                     onClick={handleToggleSelectAll}
                 >
                   {areAllSelected ? 'Deselect All' : 'Select All'}
@@ -81,7 +81,7 @@ export const BatchSelectorModal: React.FC<BatchSelectorModalProps> = ({ isOpen, 
                                             type="checkbox"
                                             checked={selected.includes(option.value)}
                                             onChange={() => handleSelect(option.value)}
-                                            className="h-4 w-4 rounded border-[var(--border)] text-[var(--accent)] focus:ring-[var(--accent)] accent-[var(--accent)] bg-panel"
+                                            className="h-4 w-4 rounded border-gray-300 text-[var(--accent)] focus:ring-[var(--accent)] accent-[var(--accent)] bg-panel"
                                         />
                                         <span>{option.label}</span>
                                     </label>

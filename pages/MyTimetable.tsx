@@ -1,139 +1,204 @@
-
-
-
-
-import React, { useMemo, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { TimetableView } from '../components/TimetableView';
 import { useAppContext } from '../hooks/useAppContext';
-import type { GeneratedTimetable, SingleBatchTimetableGrid, ClassAssignment } from '../types';
-import { Calendar } from 'lucide-react';
-import { GlassButton } from '../components/GlassButton';
-import { useQuery } from '@tanstack/react-query';
+import { useToast } from '../hooks/useToast';
+import type { GeneratedTimetable, SingleBatchTimetableGrid, ClassAssignment, TimetableFeedback, Substitution } from '../types';
+import { Star } from 'lucide-react';
 import * as api from '../services';
 
-const getWeekStart = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
-    return new Date(d.setDate(diff));
-}
+const TimetableFeedbackComponent: React.FC<{ timetable: GeneratedTimetable }> = ({ timetable }) => {
+    const { user, refreshData } = useAppContext();
+    const [hoverRating, setHoverRating] = useState(0);
+    const toast = useToast();
+
+    if (!user || user.role !== 'Faculty' || !user.facultyId) {
+        return null;
+    }
+    
+    const existingFeedback = timetable.feedback?.find(f => f.facultyId === user.facultyId);
+    const currentRating = existingFeedback?.rating || 0;
+
+    const handleRatingSubmit = async (rating: number) => {
+        if (!user.facultyId) return;
+        try {
+            const feedbackData: Omit<TimetableFeedback, 'id' | 'createdAt'> = {
+                timetableId: timetable.id,
+                facultyId: user.facultyId,
+                rating,
+            };
+            // This needs a new API endpoint, let's assume one exists for now.
+            await api.saveTimetableFeedback(feedbackData);
+            await refreshData();
+            toast.success('Thank you for your feedback!');
+        } catch(e: any) {
+            toast.error(e.message || 'Failed to submit feedback.');
+        }
+    };
+
+    return (
+        <GlassPanel className="p-4 mt-6">
+            <h3 className="text-lg font-bold text-white mb-2">Rate This Schedule</h3>
+            <p className="text-sm text-text-muted mb-4">Your feedback helps the AI create better timetables in the future.</p>
+            <div className="flex items-center gap-2">
+                {[1, 2, 3, 4, 5].map(star => (
+                    <button 
+                        key={star}
+                        onMouseEnter={() => setHoverRating(star)}
+                        onMouseLeave={() => setHoverRating(0)}
+                        onClick={() => handleRatingSubmit(star)}
+                        className="transition-transform duration-200 hover:scale-125"
+                    >
+                        <Star 
+                            size={28}
+                            className={`
+                                ${(hoverRating || currentRating) >= star ? 'text-yellow-400 fill-yellow-400' : 'text-text-muted'}
+                            `}
+                        />
+                    </button>
+                ))}
+            </div>
+            {currentRating > 0 && <p className="text-xs text-[var(--accent)] mt-2">You rated this schedule {currentRating} out of 5 stars.</p>}
+        </GlassPanel>
+    );
+};
+
 
 const MyTimetable: React.FC = () => {
-    const { user } = useAppContext();
-    const [viewDate, setViewDate] = useState(new Date());
+    const { 
+        user, generatedTimetables, batches, faculty, constraints,
+        fetchTimetables, fetchBatches, fetchFaculty, fetchConstraints
+    } = useAppContext();
 
-    const { data: generatedTimetables = [] } = useQuery({ queryKey: ['timetables'], queryFn: api.getTimetables });
-    // FIX: Provide a complete initialData object to match the Constraints type.
-    const { data: constraints } = useQuery({ queryKey: ['constraints'], queryFn: api.getConstraints, initialData: { substitutions: [], pinnedAssignments: [], plannedLeaves: [], facultyAvailability: [] } });
+    useEffect(() => {
+        fetchTimetables();
+        fetchBatches();
+        fetchFaculty();
+        fetchConstraints(); // Fetches substitutions as well
+    }, [fetchTimetables, fetchBatches, fetchFaculty, fetchConstraints]);
 
-    const userTimetable: GeneratedTimetable | null = useMemo(() => {
-        if (!user || generatedTimetables.length === 0) return null;
-
+    const userDisplayTimetable = useMemo(() => {
+        const today = new Date();
         const approvedTimetables = generatedTimetables.filter(tt => tt.status === 'Approved');
         if (approvedTimetables.length === 0) return null;
 
-        if (user.role === 'Student' && user.batchId) {
-            return approvedTimetables.find(tt => tt.batchIds.includes(user.batchId!)) || null;
+        const allApprovedAssignments = approvedTimetables.flatMap(tt => 
+            Object.values(tt.timetable).flatMap(batchGrid => 
+                Object.values(batchGrid).flatMap(daySlots => Object.values(daySlots))
+            )
+        );
+
+        const activeSubstitutions = constraints.substitutions.filter(sub => 
+            new Date(today) >= new Date(sub.startDate) && new Date(today) <= new Date(sub.endDate)
+        );
+
+        // --- STUDENT LOGIC ---
+        if (user?.role === 'Student' && user.batchId) {
+            const userBatch = batches.find(b => b.id === user.batchId);
+            if (!userBatch) return null;
+            
+            const multiBatchTimetable = approvedTimetables.find(tt => tt.batchIds.includes(user.batchId!));
+            if (!multiBatchTimetable) return null;
+
+            return {
+                ...multiBatchTimetable,
+                batchIds: [user.batchId],
+                timetable: multiBatchTimetable.timetable[user.batchId] || {},
+                title: `${userBatch.name} - Timetable`,
+            };
         }
 
-        if (user.role === 'Faculty' && user.facultyId) {
-             const personalTimetable: GeneratedTimetable = {
-                id: `faculty_${user.facultyId}_timetable`,
-                batchIds: [], // Not applicable for a faculty view
-                version: 0,
-                status: 'Approved',
-                comments: [],
-                // FIX: Changed createdAt to a Date object to match the type definition.
-                createdAt: new Date(),
-                metrics: { score: 0, hardConflicts: 0, studentGaps: 0, facultyGaps: 0, facultyWorkloadDistribution: 0, preferenceViolations: 0 },
-                timetable: {},
+        // --- FACULTY LOGIC (UPGRADED FOR MULTI-TEACHER COMPATIBILITY) ---
+        if (user?.role === 'Faculty' && user.facultyId) {
+            const facultyProfile = faculty.find(f => f.id === user.facultyId);
+            if (!facultyProfile) return null;
+            
+            const originalAssignments = allApprovedAssignments.filter(a => a.facultyIds.includes(facultyProfile.id));
+            const substitutedOriginalIds = new Set(activeSubstitutions.filter(sub => sub.originalFacultyId === facultyProfile.id).map(sub => sub.originalAssignmentId));
+            const finalOwnAssignments = originalAssignments.filter(a => !substitutedOriginalIds.has(a.id));
+
+            // CRITICAL FIX: Re-engineered this logic to be more robust.
+            // It now explicitly constructs a new, valid ClassAssignment for each substitution,
+            // preventing crashes from malformed or missing original assignment data.
+            const substituteAssignments: ClassAssignment[] = activeSubstitutions
+                .filter(sub => sub.substituteFacultyId === facultyProfile.id)
+                .map(sub => {
+                    const originalAssignment = allApprovedAssignments.find(a => a.id === sub.originalAssignmentId);
+                    if (!originalAssignment || !originalAssignment.roomId) {
+                        console.warn(`Could not create substitution view for sub ID ${sub.id}: Original assignment or its room not found.`);
+                        return null;
+                    }
+
+                    const newAssignment: ClassAssignment = {
+                        id: sub.id,
+                        subjectId: sub.substituteSubjectId,
+                        facultyIds: [sub.substituteFacultyId],
+                        roomId: originalAssignment.roomId,
+                        batchId: sub.batchId,
+                        day: sub.day,
+                        slot: sub.slot,
+                    };
+                    return newAssignment;
+                })
+                .filter((a): a is ClassAssignment => a !== null);
+
+
+            const allFinalAssignments = [...finalOwnAssignments, ...substituteAssignments];
+            const facultyTimetableGrid: SingleBatchTimetableGrid = {};
+            const facultyBatchIds = new Set<string>();
+
+            for (const assignment of allFinalAssignments) {
+                if (!facultyTimetableGrid[assignment.day]) facultyTimetableGrid[assignment.day] = {};
+                facultyTimetableGrid[assignment.day][assignment.slot] = assignment;
+                facultyBatchIds.add(assignment.batchId);
+            }
+            
+            const relevantTimetableShell = 
+                approvedTimetables.find(tt => tt.batchIds.some(bId => facultyBatchIds.has(bId))) 
+                || approvedTimetables[0];
+
+            // FIX: Add a null-safety check to prevent a crash if no relevant timetables exist.
+            if (!relevantTimetableShell) return null;
+
+            return {
+                ...relevantTimetableShell,
+                id: `${relevantTimetableShell.id}_fac_${facultyProfile.id}`,
+                batchIds: Array.from(facultyBatchIds),
+                timetable: facultyTimetableGrid,
+                title: "My Timetable",
             };
-
-            const userAssignments: ClassAssignment[] = [];
-            approvedTimetables.forEach(tt => {
-                Object.values(tt.timetable).forEach(batchGrid => {
-                    Object.values(batchGrid).forEach(daySlots => {
-                        Object.values(daySlots).forEach(assignment => {
-                            const classAssignment = assignment as ClassAssignment;
-                            if (classAssignment.facultyIds.includes(user.facultyId!)) {
-                                userAssignments.push(classAssignment);
-                            }
-                        });
-                    });
-                });
-            });
-
-            const grid: SingleBatchTimetableGrid = {};
-            userAssignments.forEach(a => {
-                if (!grid[a.day]) grid[a.day] = {};
-                grid[a.day][a.slot] = a;
-            });
-            personalTimetable.timetable = { 'faculty_view': grid }; // Wrap in a master grid structure
-            return personalTimetable;
         }
 
         return null;
-    }, [user, generatedTimetables]);
+    }, [user, generatedTimetables, batches, faculty, constraints.substitutions]);
     
-    const displayGrid = useMemo(() => {
-        if (!userTimetable) return {};
-        if (user?.role === 'Student' && user.batchId) {
-            return userTimetable.timetable[user.batchId] || {};
-        }
-        if (user?.role === 'Faculty') {
-            return userTimetable.timetable['faculty_view'] || {};
-        }
-        return {};
-    }, [user, userTimetable]);
-
-
-    const handleDateChange = (daysToAdd: number) => {
-        const newDate = new Date(viewDate);
-        newDate.setDate(newDate.getDate() + daysToAdd);
-        setViewDate(newDate);
-    }
-    
-    const weekStart = getWeekStart(viewDate);
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 4);
 
     return (
         <div className="space-y-6">
             <GlassPanel className="p-6">
-                <div className="flex flex-wrap justify-between items-center gap-4">
-                    <div>
-                        <h2 className="text-2xl font-bold text-white">My Timetable</h2>
-                        <p className="text-text-muted">Your personalized weekly schedule.</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <GlassButton variant="secondary" onClick={() => handleDateChange(-7)}>Prev Week</GlassButton>
-                        <span className="text-sm font-semibold text-white w-52 text-center">
-                            {weekStart.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} - {weekEnd.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                        </span>
-                        <GlassButton variant="secondary" onClick={() => handleDateChange(7)}>Next Week</GlassButton>
-                    </div>
-                </div>
+                <h2 className="text-2xl font-bold text-white">{userDisplayTimetable?.title || "My Timetable"}</h2>
+                <p className="text-text-muted">Showing the currently approved and published schedule for today, including any substitutions.</p>
             </GlassPanel>
-
-            {userTimetable ? (
-                 <GlassPanel className="p-4 sm:p-6">
-                    <TimetableView
-                        timetableData={{ ...userTimetable, timetable: displayGrid as SingleBatchTimetableGrid }}
-                        isEditable={false}
+            
+            <GlassPanel className="p-2 sm:p-4">
+                {userDisplayTimetable ? (
+                    <TimetableView 
+                        timetableData={userDisplayTimetable} 
+                        isEditable={false} 
                         conflictMap={new Map()}
                         substitutions={constraints.substitutions}
-                        viewDate={viewDate}
+                        viewDate={new Date()}
                     />
-                 </GlassPanel>
-            ) : (
-                <GlassPanel className="p-6 text-center h-96 flex flex-col items-center justify-center">
-                    <Calendar size={48} className="text-text-muted mb-4"/>
-                    <h3 className="text-xl font-bold text-white">No Timetable Found</h3>
-                    <p className="text-text-muted mt-2">
-                        An approved timetable for your {user?.role === 'Student' ? 'batch' : 'profile'} is not yet available.
-                    </p>
-                </GlassPanel>
+                ) : (
+                    <div className="text-center py-20">
+                        <p className="text-lg text-white">No approved timetable is available for you at the moment.</p>
+                        <p className="text-text-muted">Please check back later or contact your department head.</p>
+                    </div>
+                )}
+            </GlassPanel>
+
+            {userDisplayTimetable && user?.role === 'Faculty' && (
+                <TimetableFeedbackComponent timetable={userDisplayTimetable} />
             )}
         </div>
     );

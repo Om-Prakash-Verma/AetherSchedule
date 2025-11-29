@@ -1,5 +1,3 @@
-
-
 import React, { useState, lazy, Suspense } from 'react';
 import { useAppContext } from './hooks/useAppContext';
 import { Layout } from './components/Layout';
@@ -16,12 +14,12 @@ const MyTimetable = lazy(() => import('./pages/MyTimetable'));
 const Scheduler = lazy(() => import('./pages/Scheduler'));
 const DataManagement = lazy(() => import('./pages/DataManagement'));
 const Constraints = lazy(() => import('./pages/Constraints'));
-const Analytics = lazy(() => import('./pages/Analytics'));
+const Reports = lazy(() => import('./pages/Reports'));
 const Settings = lazy(() => import('./pages/Settings'));
 
 const PageLoader: React.FC = () => (
   <div className="flex justify-center items-center h-64">
-    <Loader2 className="animate-spin h-8 w-8 text-[var(--accent)]" />
+    <Loader2 className="animate-spin h-8 w-8 text-accent" />
   </div>
 );
 
@@ -38,7 +36,7 @@ const App: React.FC = () => {
       case 'Scheduler': return <Scheduler />;
       case 'Data Management': return <DataManagement />;
       case 'Constraints': return <Constraints />;
-      case 'Analytics': return <Analytics />;
+      case 'Reports': return <Reports />;
       case 'Settings': return <Settings />;
       default: return <Dashboard />;
     }
@@ -46,8 +44,8 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center">
-        <Loader2 className="h-10 w-10 text-[var(--accent)] animate-spin" />
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <Loader2 className="h-10 w-10 text-accent animate-spin" />
       </div>
     );
   }
@@ -55,17 +53,17 @@ const App: React.FC = () => {
   // FIX: Added a dedicated error screen for critical startup failures.
   if (appInitializationError) {
     return (
-      <div className="min-h-screen bg-[var(--bg)] flex items-center justify-center p-4">
-        <GlassPanel className="max-w-3xl p-8 text-center border-[var(--danger)]">
-          <AlertTriangle className="mx-auto h-12 w-12 text-[var(--danger)]" />
-          <h1 className="mt-4 text-2xl font-bold text-[var(--text-white)]">Application Startup Failed</h1>
-          <p className="mt-2 text-[var(--text-muted)]">A critical error occurred while connecting to the backend services.</p>
-          <div className="mt-4 p-4 bg-[var(--panel-strong)] rounded-lg text-left font-mono text-sm text-[var(--red-400)] overflow-x-auto">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
+        <GlassPanel className="max-w-3xl p-8 text-center border-danger">
+          <AlertTriangle className="mx-auto h-12 w-12 text-danger" />
+          <h1 className="mt-4 text-2xl font-bold text-white">Application Startup Failed</h1>
+          <p className="mt-2 text-text-muted">A critical error occurred while connecting to the backend services.</p>
+          <div className="mt-4 p-4 bg-panel-strong rounded-lg text-left font-mono text-sm text-red-400 overflow-x-auto">
             <code>{appInitializationError}</code>
           </div>
-          <p className="mt-4 text-sm text-[var(--text-muted)]">
+          <p className="mt-4 text-sm text-text-muted">
             If you are running this locally, please ensure your backend server is running and the database schema has been pushed using 
-            <code className="bg-[var(--panel-strong)] px-2 py-1 rounded-md text-[var(--text-white)] mx-1">npx drizzle-kit push</code>.
+            <code className="bg-panel-strong px-2 py-1 rounded-md text-white mx-1">npx drizzle-kit push</code>.
           </p>
         </GlassPanel>
       </div>
@@ -79,15 +77,13 @@ const App: React.FC = () => {
     
     switch (publicPage) {
       case 'Homepage':
-        return <Homepage onGoToApp={() => setShowLogin(true)} onShowHowItWorks={() => setPublicPage('HowItWorks')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} onGoToHome={() => setPublicPage('Homepage')} />;
+        return <Homepage onGoToApp={() => setShowLogin(true)} onShowHowItWorks={() => setPublicPage('HowItWorks')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} />;
       case 'HowItWorks':
-        {/* FIX: Pass onShowHowItWorks prop to satisfy PublicHowItWorksProps. */}
-        return <PublicHowItWorks onGoToApp={() => setShowLogin(true)} onGoToHome={() => setPublicPage('Homepage')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} onShowHowItWorks={() => setPublicPage('HowItWorks')} />;
+        return <PublicHowItWorks onGoToApp={() => setShowLogin(true)} onGoToHome={() => setPublicPage('Homepage')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} />;
       case 'AlgorithmDeepDive':
-        {/* FIX: Pass onShowAlgorithmDeepDive prop to satisfy PublicAlgorithmDeepDiveProps. */}
-        return <PublicAlgorithmDeepDive onGoToApp={() => setShowLogin(true)} onGoToHome={() => setPublicPage('Homepage')} onShowHowItWorks={() => setPublicPage('HowItWorks')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} />;
+        return <PublicAlgorithmDeepDive onGoToApp={() => setShowLogin(true)} onGoToHome={() => setPublicPage('Homepage')} onShowHowItWorks={() => setPublicPage('HowItWorks')} />;
       default:
-        return <Homepage onGoToApp={() => setShowLogin(true)} onShowHowItWorks={() => setPublicPage('HowItWorks')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} onGoToHome={() => setPublicPage('Homepage')} />;
+        return <Homepage onGoToApp={() => setShowLogin(true)} onShowHowItWorks={() => setPublicPage('HowItWorks')} onShowAlgorithmDeepDive={() => setPublicPage('AlgorithmDeepDive')} />;
     }
   }
 

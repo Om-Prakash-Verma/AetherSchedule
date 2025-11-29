@@ -1,22 +1,16 @@
-import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { GlassButton } from '../components/GlassButton';
 import { BatchSelectorModal } from '../components/BatchSelectorModal';
 import { SubstituteModal } from '../components/SubstituteModal';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
-import { useUndoRedo } from '../hooks/useUndoRedo';
 import * as api from '../services';
 import type { Batch, GeneratedTimetable, TimetableGrid, DropChange, Conflict, ClassAssignment, SingleBatchTimetableGrid, Substitution } from '../types';
-import { Zap, Save, Printer, Calendar, Send, Check, X, Loader2, ChevronDown, Bot, Undo2, Redo2 } from 'lucide-react';
+import { Zap, Save, ChevronLeft, ChevronRight, Printer, Calendar, Send, Check, X, Loader2, ChevronDown } from 'lucide-react';
 import { TimetableView } from '../components/TimetableView';
 import { exportTimetableToPdf, exportTimetableToIcs } from '../utils/export';
 import { checkConflicts } from '../core/conflictChecker';
-import { AIEngineConsole } from '../components/AIEngineConsole';
-import { AICommandBar } from '../components/AICommandBar';
-import { AIComparisonModal } from '../components/AIComparisonModal';
-import { cn } from '../utils/cn';
-import { useQuery } from '@tanstack/react-query';
 
 const statusColors: Record<GeneratedTimetable['status'], string> = {
     Draft: 'bg-yellow-500/10 text-yellow-500',
@@ -36,90 +30,36 @@ const flattenTimetable = (timetable: TimetableGrid): ClassAssignment[] => {
     );
 };
 
-const diffTimetables = (oldGrid: TimetableGrid, newGrid: TimetableGrid, subjects: any[], batches: any[]): string => {
-    const oldAssignments = flattenTimetable(oldGrid).map(a => `${a.batchId}-${a.subjectId}-${a.day}-${a.slot}`);
-    const newAssignments = flattenTimetable(newGrid);
-
-    const moved: ClassAssignment[] = [];
-    newAssignments.forEach(newAsgn => {
-        const oldVersion = `${newAsgn.batchId}-${newAsgn.subjectId}-${newAsgn.day}-${newAsgn.slot}`;
-        if (!oldAssignments.includes(oldVersion)) {
-            moved.push(newAsgn);
-        }
-    });
-
-    if (moved.length === 2) {
-        const sub1 = subjects.find(s => s.id === moved[0].subjectId)?.code;
-        const batch1 = batches.find(b => b.id === moved[0].batchId)?.name;
-        const sub2 = subjects.find(s => s.id === moved[1].subjectId)?.code;
-        const batch2 = batches.find(b => b.id === moved[1].batchId)?.name;
-        return `Swap ${sub1} for ${batch1} with ${sub2} for ${batch2}.`;
-    }
-    if (moved.length === 1) {
-         const sub1 = subjects.find(s => s.id === moved[0].subjectId)?.code;
-         const batch1 = batches.find(b => b.id === moved[0].batchId)?.name;
-         return `Move ${sub1} for ${batch1}.`
-    }
-
-    return "Multiple changes were made.";
-};
-
-
-const CONSOLE_MESSAGES = [
-    "Waking up the AI scheduling engine...",
-    "Reading all your rules and requirements...",
-    "Asking the AI for the smartest way to solve this...",
-    "AI has a plan! Starting the scheduling process...",
-    "Creating hundreds of rough draft timetables to start...",
-    "Checking how good the first drafts are...",
-    "Evolving the best drafts to make them even better...",
-    "Mixing and matching the best parts of good schedules...",
-    "Making small, smart changes to find improvements...",
-    "Checking if we're stuck on a 'good enough' solution...",
-    "Thinking outside the box... Asking AI for a creative idea.",
-    "Double-checking to make sure no rules are broken...",
-    "Polishing the best options for the final touches...",
-    "Reviewing the top timetable candidates...",
-    "Preparing your top 5 timetable options.",
-];
 
 const Scheduler: React.FC = () => {
-    const { user, refreshAllData: refreshData, timeSlots } = useAppContext();
+    const { 
+        user, batches, subjects, faculty, rooms, departments, generatedTimetables, refreshData, timeSlots, constraints,
+        fetchBatches, fetchSubjects, fetchFaculty, fetchRooms, fetchDepartments, fetchTimetables, fetchSubstitutions
+    } = useAppContext();
     const [selectedBatchIds, setSelectedBatchIds] = useState<string[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [candidates, setCandidates] = useState<GeneratedTimetable[]>([]);
-    const [viewedCandidate, setViewedCandidate] = useState<GeneratedTimetable | null>(null);
+    const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(0);
     const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
     const [comment, setComment] = useState('');
-    
-    // NEW: Use useUndoRedo for timetable state management
-    const [editedTimetable, { set: setEditedTimetable, undo, redo, canUndo, canRedo, reset: resetEditedTimetable }] = useUndoRedo<GeneratedTimetable | null>(null);
-    
+    const [editedTimetable, setEditedTimetable] = useState<GeneratedTimetable | null>(null);
+    const [isDirty, setIsDirty] = useState(false);
     const [conflictMap, setConflictMap] = useState<Map<string, Conflict[]>>(new Map());
     const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
     const [isSubstituteModalOpen, setIsSubstituteModalOpen] = useState(false);
     const [substituteTarget, setSubstituteTarget] = useState<ClassAssignment | null>(null);
-    const [isConsoleVisible, setIsConsoleVisible] = useState(false);
-    const [consoleMessages, setConsoleMessages] = useState<string[]>([]);
-    const messageIntervalRef = useRef<number | null>(null);
-    const [isAIProcessing, setIsAIProcessing] = useState(false);
-    const [aiSuggestedTimetable, setAISuggestedTimetable] = useState<TimetableGrid | null>(null);
-    
-    // State for AI comparison feature
-    const [selectedForComparison, setSelectedForComparison] = useState<string[]>([]);
-    const [isComparing, setIsComparing] = useState(false);
-    const [comparisonResult, setComparisonResult] = useState<string | null>(null);
-    const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
-    
     const toast = useToast();
     
-    const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
-    const { data: departments = [] } = useQuery({ queryKey: ['departments'], queryFn: api.getDepartments });
-    const { data: generatedTimetables = [] } = useQuery({ queryKey: ['timetables'], queryFn: api.getTimetables });
-    const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
-    const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
-    const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
-    const { data: constraints = { substitutions: [] } } = useQuery({ queryKey: ['constraints'], queryFn: api.getConstraints });
+    useEffect(() => {
+        // Fetch all data required for the scheduler page to function
+        fetchBatches();
+        fetchDepartments();
+        fetchTimetables();
+        fetchSubjects();
+        fetchFaculty();
+        fetchRooms();
+        fetchSubstitutions();
+    }, [fetchBatches, fetchDepartments, fetchTimetables, fetchSubjects, fetchFaculty, fetchRooms, fetchSubstitutions]);
 
     const batchOptions = useMemo(() => {
         return departments.map(dept => ({
@@ -137,10 +77,10 @@ const Scheduler: React.FC = () => {
             .sort((a, b) => b.version - a.version);
     }, [generatedTimetables, selectedBatchIds]);
     
-    const selectedTimetableToView = useMemo(() => {
+    const selectedTimetable = useMemo(() => {
         if (selectedVersionId) return generatedTimetables.find(v => v.id === selectedVersionId);
-        return viewedCandidate;
-    }, [generatedTimetables, selectedVersionId, viewedCandidate]);
+        return candidates[selectedCandidateIndex];
+    }, [generatedTimetables, selectedVersionId, candidates, selectedCandidateIndex]);
 
     const calculateConflicts = useCallback((grid: TimetableGrid | undefined, currentTimetableId: string) => {
         if (!grid) return new Map();
@@ -151,29 +91,34 @@ const Scheduler: React.FC = () => {
             .filter(tt => tt.status === 'Approved' && tt.id !== currentTimetableId)
             .flatMap(tt => flattenTimetable(tt.timetable));
             
-        const substitutionAssignments: ClassAssignment[] = (constraints.substitutions || []).map(sub => ({
+        const allApprovedAssignments = generatedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
+        
+        // CRITICAL FIX: The temporary assignment object created for a substitution
+        // must use `facultyIds: [sub.substituteFacultyId]` to match the `ClassAssignment` type.
+        // The previous code used `facultyId`, which caused the conflict checker to crash.
+        const substitutionAssignments: ClassAssignment[] = constraints.substitutions.map(sub => ({
             id: sub.id,
             subjectId: sub.substituteSubjectId,
             facultyIds: [sub.substituteFacultyId],
-            roomId: sub.roomId, // Use roomId from the self-contained substitution record
+            roomId: allApprovedAssignments.find(a => a.id === sub.originalAssignmentId)?.roomId || '',
             batchId: sub.batchId,
             day: sub.day,
             slot: sub.slot,
         }));
             
-        return checkConflicts(draftAssignments, faculty, rooms, subjects, batches, [...approvedAssignments, ...substitutionAssignments]);
-    }, [generatedTimetables, faculty, rooms, subjects, batches, constraints.substitutions]);
+        return checkConflicts(draftAssignments, faculty, rooms, [...approvedAssignments, ...substitutionAssignments]);
+    }, [generatedTimetables, faculty, rooms, constraints.substitutions]);
     
     useEffect(() => {
-        if (selectedTimetableToView) {
-            // Reset the history with the new timetable
-            resetEditedTimetable(JSON.parse(JSON.stringify(selectedTimetableToView)));
-            setConflictMap(calculateConflicts(selectedTimetableToView.timetable, selectedTimetableToView.id));
+        if (selectedTimetable) {
+            setEditedTimetable(JSON.parse(JSON.stringify(selectedTimetable)));
+            setConflictMap(calculateConflicts(selectedTimetable.timetable, selectedTimetable.id));
         } else {
-            resetEditedTimetable(null);
+            setEditedTimetable(null);
             setConflictMap(new Map());
         }
-    }, [selectedTimetableToView, calculateConflicts, resetEditedTimetable]);
+        setIsDirty(false);
+    }, [selectedTimetable, calculateConflicts]);
 
     const handleDropAssignment = useCallback((change: DropChange) => {
         if (!editedTimetable) return;
@@ -216,29 +161,27 @@ const Scheduler: React.FC = () => {
             }
         }
         
-        // Push the new state to the undo/redo history
-        setEditedTimetable({ ...editedTimetable, timetable: newGrid });
+        setEditedTimetable(prev => prev ? { ...prev, timetable: newGrid } : null);
         setConflictMap(newConflictMap);
-    }, [editedTimetable, calculateConflicts, toast, setEditedTimetable]);
+        setIsDirty(true);
+    }, [editedTimetable, calculateConflicts, toast]);
 
     const handleUpdateDraft = useCallback(async () => {
-        if (!editedTimetable || !canUndo) return;
+        if (!editedTimetable || !isDirty) return;
         try {
             await api.updateTimetable(editedTimetable);
             await refreshData();
-            // After saving, reset the history to make the current state the new baseline
-            resetEditedTimetable(editedTimetable);
+            setIsDirty(false);
             toast.success('Draft updated successfully.');
         } catch (error: any) {
             toast.error(error.message || 'Failed to update draft.');
         }
-    }, [editedTimetable, canUndo, refreshData, toast, resetEditedTimetable]);
+    }, [editedTimetable, isDirty, refreshData, toast]);
 
     const handleBatchChange = (ids: string[]) => {
         setSelectedBatchIds(ids);
         setCandidates([]);
         setSelectedVersionId(null);
-        setViewedCandidate(null);
     };
     
     const handleConfirmBatchSelection = (ids: string[]) => {
@@ -254,41 +197,24 @@ const Scheduler: React.FC = () => {
         setIsLoading(true);
         setCandidates([]);
         setSelectedVersionId(null);
-        setViewedCandidate(null);
-        
-        setIsConsoleVisible(true);
-        setConsoleMessages(["[SYSTEM] Starting the AI timetable generator..."]);
-
-        let messageIndex = 0;
-        messageIntervalRef.current = window.setInterval(() => {
-            setConsoleMessages(prev => [...prev, CONSOLE_MESSAGES[messageIndex % CONSOLE_MESSAGES.length]]);
-            messageIndex++;
-        }, 1200);
-
         try {
             const results = await api.runScheduler(selectedBatchIds);
             setCandidates(results);
-            setViewedCandidate(results[0] || null);
+            setSelectedCandidateIndex(0);
             if (results.length > 0) {
                 toast.success(`Generated ${results.length} new candidates.`);
-                setConsoleMessages(prev => [...prev, `[SUCCESS] All done! Here are your ${results.length} best options.`]);
             } else {
                 toast.info('No valid timetables could be generated.');
-                setConsoleMessages(prev => [...prev, `[PROBLEM] The AI couldn't find a solution. Your rules might be too strict. Try removing a constraint.`]);
             }
         } catch (error: any) {
             toast.error(error.message || 'Error during generation.');
-            setConsoleMessages(prev => [...prev, `[ERROR] An unexpected problem occurred: ${error.message}. Please try again.`]);
         } finally {
             setIsLoading(false);
-            if (messageIntervalRef.current) {
-                clearInterval(messageIntervalRef.current);
-                messageIntervalRef.current = null;
-            }
         }
     }, [selectedBatchIds, toast]);
 
-    const handleSaveCandidate = useCallback(async (candidateToSave: GeneratedTimetable) => {
+    const handleSaveCandidate = useCallback(async () => {
+        const candidateToSave = candidates[selectedCandidateIndex];
         if (!candidateToSave) return;
 
         const newVersion = (savedVersions.reduce((max, v) => Math.max(max, v.version), 0) || 0) + 1;
@@ -298,7 +224,7 @@ const Scheduler: React.FC = () => {
             version: newVersion,
             status: 'Draft',
             comments: [],
-            createdAt: new Date(),
+            createdAt: new Date().toISOString(),
         };
 
         try {
@@ -306,27 +232,26 @@ const Scheduler: React.FC = () => {
             await refreshData();
             setCandidates([]);
             setSelectedVersionId(newTimetable.id);
-            setViewedCandidate(null);
             toast.success(`Saved as Version ${newVersion}`);
         } catch (error: any) {
             toast.error(error.message || 'Failed to save draft.');
         }
-    }, [savedVersions, selectedBatchIds, refreshData, toast]);
+    }, [candidates, selectedCandidateIndex, savedVersions, selectedBatchIds, refreshData, toast]);
     
     const handleUpdateStatus = useCallback(async (status: GeneratedTimetable['status']) => {
-        if (!selectedTimetableToView) return;
+        if (!selectedTimetable) return;
         try {
-            const updatedTimetable = { ...selectedTimetableToView, status };
+            const updatedTimetable = { ...selectedTimetable, status };
             await api.updateTimetable(updatedTimetable);
             await refreshData();
             toast.success(`Timetable status updated to ${status}.`);
         } catch (error: any) {
             toast.error(error.message || 'Failed to update status.');
         }
-    }, [selectedTimetableToView, refreshData, toast]);
+    }, [selectedTimetable, refreshData, toast]);
 
     const handleAddComment = useCallback(async () => {
-        if (!comment.trim() || !selectedTimetableToView || !user) return;
+        if (!comment.trim() || !selectedTimetable || !user) return;
         try {
             const newComment = {
                 userId: user.id,
@@ -335,8 +260,8 @@ const Scheduler: React.FC = () => {
                 timestamp: new Date().toISOString(),
             };
             const updatedTimetable = { 
-                ...selectedTimetableToView,
-                comments: [...(selectedTimetableToView.comments || []), newComment],
+                ...selectedTimetable,
+                comments: [...(selectedTimetable.comments || []), newComment],
             };
             await api.updateTimetable(updatedTimetable);
             await refreshData();
@@ -345,19 +270,18 @@ const Scheduler: React.FC = () => {
         } catch (error: any) {
             toast.error(error.message || 'Failed to add comment.');
         }
-    }, [comment, selectedTimetableToView, user, refreshData, toast]);
+    }, [comment, selectedTimetable, user, refreshData, toast]);
     
     const handleFindSubstitute = (assignment: ClassAssignment) => {
         setSubstituteTarget(assignment);
         setIsSubstituteModalOpen(true);
     };
 
-    const handleCreateSubstitution = async (substitution: Omit<Substitution, 'id' | 'createdAt'>) => {
+    const handleCreateSubstitution = async (substitution: Omit<Substitution, 'id'>) => {
         try {
             const newSub: Substitution = {
                 ...substitution,
-                id: `sub_${Date.now()}`,
-                createdAt: new Date().toISOString(),
+                id: `sub_${Date.now()}`
             };
             await api.createSubstitution(newSub);
             await refreshData();
@@ -369,70 +293,10 @@ const Scheduler: React.FC = () => {
         }
     };
 
-    const handleAICommand = async (command: string) => {
-        if (!editedTimetable) return;
-        setIsAIProcessing(true);
-        setAISuggestedTimetable(null);
-        try {
-            const newGrid = await api.applyNLC(editedTimetable.timetable, command);
-            setAISuggestedTimetable(newGrid);
-        } catch (e: any) {
-            toast.error(e.message || "AI command failed.");
-        } finally {
-            setIsAIProcessing(false);
-        }
-    };
-
-    const confirmAISuggestion = () => {
-        if (aiSuggestedTimetable && editedTimetable) {
-            setEditedTimetable({ ...editedTimetable, timetable: aiSuggestedTimetable });
-            setConflictMap(calculateConflicts(aiSuggestedTimetable, editedTimetable.id));
-            setAISuggestedTimetable(null);
-            toast.success("AI change applied.");
-        }
-    };
-    
-    const handleCompareSelection = (candidateId: string) => {
-        setSelectedForComparison(prev => {
-            if (prev.includes(candidateId)) {
-                return prev.filter(id => id !== candidateId);
-            }
-            if (prev.length < 2) {
-                return [...prev, candidateId];
-            }
-            // If already 2 selected, replace the last one
-            return [prev[0], candidateId];
-        });
-    };
-    
-    const handleCompare = async () => {
-        if (selectedForComparison.length !== 2) return;
-        
-        const candidate1 = candidates.find(c => c.id === selectedForComparison[0]);
-        const candidate2 = candidates.find(c => c.id === selectedForComparison[1]);
-
-        if (!candidate1 || !candidate2) return;
-        
-        setIsComparing(true);
-        setComparisonResult(null);
-        setIsComparisonModalOpen(true);
-
-        try {
-            const result = await api.compareTimetables(candidate1, candidate2);
-            setComparisonResult(result.analysis);
-        } catch (e: any) {
-            toast.error(e.message || "Failed to get AI comparison.");
-            setIsComparisonModalOpen(false);
-        } finally {
-            setIsComparing(false);
-        }
-    };
-
-
     const canSubmit = user?.role === 'DepartmentHead' || user?.role === 'TimetableManager' || user?.role === 'SuperAdmin';
     const canApprove = user?.role === 'TimetableManager' || user?.role === 'SuperAdmin';
     
-    const firstBatchForExport = batches.find(b => b.id === selectedTimetableToView?.batchIds[0]);
+    const firstBatchForExport = batches.find(b => b.id === selectedTimetable?.batchIds[0]);
 
     return (
         <>
@@ -467,70 +331,20 @@ const Scheduler: React.FC = () => {
                                     : 'Generate New'
                                 }
                             </GlassButton>
+                            {isLoading && (
+                                <p className="text-xs text-text-muted text-center mt-2">
+                                    AI is devising a multi-phase optimization strategy... Then, executing a high-speed, self-correcting genetic evolution. This may take a moment.
+                                </p>
+                            )}
                         </div>
                     </GlassPanel>
-
-                     <AICommandBar
-                        onCommand={handleAICommand}
-                        isProcessing={isAIProcessing}
-                        aiSuggestion={aiSuggestedTimetable && editedTimetable ? {
-                            summary: diffTimetables(editedTimetable.timetable, aiSuggestedTimetable, subjects, batches),
-                            onConfirm: confirmAISuggestion,
-                            onDiscard: () => setAISuggestedTimetable(null),
-                        } : null}
-                        disabled={!editedTimetable || editedTimetable.status !== 'Draft'}
-                    />
-
-                    {candidates.length > 0 && (
-                        <GlassPanel className="p-4">
-                             <div className="flex justify-between items-center mb-2">
-                                <h2 className="text-lg font-bold">New Candidates</h2>
-                                <GlassButton 
-                                    icon={Bot} 
-                                    variant="secondary" 
-                                    className="text-xs py-1 px-2"
-                                    disabled={selectedForComparison.length !== 2 || isComparing}
-                                    onClick={handleCompare}
-                                >
-                                    {isComparing ? 'Analyzing...' : 'Compare with AI'}
-                                </GlassButton>
-                            </div>
-                            <div className="space-y-2 max-h-96 overflow-y-auto">
-                               {candidates.map((cand, i) => (
-                                   <div key={cand.id} className={cn('p-3 rounded-lg border transition-colors', viewedCandidate?.id === cand.id ? 'bg-accent/20 border-accent/30' : 'bg-panel/50 border-transparent hover:border-accent/30 hover:bg-accent/10')}>
-                                        <div className="flex items-start gap-3">
-                                            <input 
-                                                type="checkbox"
-                                                className="mt-1 h-4 w-4 rounded border-[var(--border)] text-accent focus:ring-accent accent-accent bg-panel"
-                                                checked={selectedForComparison.includes(cand.id)}
-                                                onChange={() => handleCompareSelection(cand.id)}
-                                            />
-                                            <div className="flex-1">
-                                                <p className="font-semibold text-white">Candidate {i+1}</p>
-                                                <div className="text-xs text-text-muted grid grid-cols-2 gap-x-2">
-                                                    <span>Score: <span className="font-mono text-white">{cand.metrics.score.toFixed(0)}</span></span>
-                                                    <span>S. Gaps: <span className="font-mono text-white">{cand.metrics.studentGaps}</span></span>
-                                                    <span>F. Gaps: <span className="font-mono text-white">{cand.metrics.facultyGaps}</span></span>
-                                                    <span>F. Var: <span className="font-mono text-white">{cand.metrics.facultyWorkloadDistribution.toFixed(1)}</span></span>
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col gap-1">
-                                                 <GlassButton variant="secondary" className="text-xs py-1 px-2" onClick={() => { setViewedCandidate(cand); setSelectedVersionId(null); }}>View</GlassButton>
-                                                 <GlassButton variant="secondary" className="text-xs py-1 px-2" onClick={() => handleSaveCandidate(cand)}>Save</GlassButton>
-                                            </div>
-                                        </div>
-                                   </div>
-                               ))}
-                            </div>
-                        </GlassPanel>
-                    )}
 
                     <GlassPanel className="p-4">
                         <h2 className="text-lg font-bold mb-4">Saved Versions</h2>
                         <div className="space-y-2 max-h-96 overflow-y-auto">
                             {selectedBatchIds.length > 0 && savedVersions.length > 0 ? savedVersions.map(v => (
-                                <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setViewedCandidate(null); }} 
-                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-panel-strong border-transparent hover:border-[var(--border)] hover:bg-panel'}`}>
+                                <button key={v.id} onClick={() => { setSelectedVersionId(v.id); setCandidates([]); }} 
+                                    className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedVersionId === v.id ? 'bg-[var(--accent)]/20 border-[var(--accent)]/30' : 'bg-white/10 border-transparent hover:border-white/20'}`}>
                                     <div className="flex justify-between items-center">
                                         <p className="font-semibold text-white">Version {v.version}</p>
                                         <span className={`px-2 py-0.5 text-xs rounded-full ${statusColors[v.status]}`}>{v.status}</span>
@@ -547,34 +361,38 @@ const Scheduler: React.FC = () => {
                 </div>
 
                 <div className="lg:col-span-3 space-y-6">
-                    {selectedTimetableToView && editedTimetable ? (
+                    {selectedTimetable && editedTimetable ? (
                         <>
                             <GlassPanel className="p-4">
                                 <div className="border-b border-[var(--border)] pb-4 mb-4 flex flex-wrap justify-between items-center gap-4">
                                     <div>
                                          <h3 className="text-xl font-bold text-white">
-                                             {selectedTimetableToView.version ? `Version ${selectedTimetableToView.version}` : `Candidate ${candidates.findIndex(c=>c.id === selectedTimetableToView.id) + 1}`}
+                                             {selectedTimetable.version ? `Version ${selectedTimetable.version}` : `Candidate ${selectedCandidateIndex + 1}/${candidates.length}`}
                                          </h3>
                                          <div className="flex items-center gap-2">
-                                            <p className="text-sm text-text-muted">Status: <span className={`font-semibold ${statusColors[selectedTimetableToView.status]}`}>{selectedTimetableToView.status}</span></p>
-                                            {canUndo && selectedTimetableToView.status === 'Draft' && (
+                                            <p className="text-sm text-text-muted">Status: <span className={`font-semibold ${statusColors[selectedTimetable.status]}`}>{selectedTimetable.status}</span></p>
+                                            {isDirty && selectedTimetable.status === 'Draft' && (
                                                 <span className="px-2 py-0.5 text-xs rounded-full bg-orange-500/10 text-orange-400 font-semibold animate-pulse">Unsaved Changes</span>
                                             )}
                                          </div>
                                      </div>
                                     <div className="flex items-center gap-2 flex-wrap">
-                                        {selectedTimetableToView.version ? (
+                                        {selectedTimetable.version && firstBatchForExport && (
                                              <>
-                                                <GlassButton variant="secondary" icon={Printer} onClick={() => exportTimetableToPdf(selectedTimetableToView, subjects, faculty, rooms, timeSlots, batches)}>PDF</GlassButton>
-                                                {firstBatchForExport && <GlassButton variant="secondary" icon={Calendar} onClick={() => exportTimetableToIcs(selectedTimetableToView, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>ICS</GlassButton>}
+                                                <GlassButton variant="secondary" icon={Printer} onClick={() => exportTimetableToPdf(selectedTimetable, subjects, faculty, rooms, timeSlots, batches)}>PDF</GlassButton>
+                                                <GlassButton variant="secondary" icon={Calendar} onClick={() => exportTimetableToIcs(selectedTimetable, firstBatchForExport, subjects, faculty, rooms, timeSlots)}>ICS</GlassButton>
                                              </>
-                                        ) : null}
-                                        {editedTimetable.status === 'Draft' && (
-                                            <>
-                                                <GlassButton variant="secondary" icon={Undo2} onClick={undo} disabled={!canUndo}>Undo</GlassButton>
-                                                <GlassButton variant="secondary" icon={Redo2} onClick={redo} disabled={!canRedo}>Redo</GlassButton>
-                                                <GlassButton icon={Save} onClick={handleUpdateDraft} disabled={!canUndo}>Save Changes</GlassButton>
-                                            </>
+                                        )}
+                                        {candidates.length > 0 && !selectedVersionId && (
+                                            <div className="flex items-center gap-2">
+                                                <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.max(0, p - 1))} disabled={selectedCandidateIndex === 0}><ChevronLeft size={16}/></GlassButton>
+                                                <span className="font-mono text-sm">{selectedCandidateIndex + 1} / {candidates.length}</span>
+                                                <GlassButton variant="secondary" className="p-2" onClick={() => setSelectedCandidateIndex(p => Math.min(candidates.length - 1, p + 1))} disabled={selectedCandidateIndex === candidates.length - 1}><ChevronRight size={16}/></GlassButton>
+                                                <GlassButton icon={Save} onClick={handleSaveCandidate}>Save as Draft</GlassButton>
+                                            </div>
+                                        )}
+                                        {selectedTimetable.version && selectedTimetable.status === 'Draft' && (
+                                            <GlassButton icon={Save} onClick={handleUpdateDraft} disabled={!isDirty}>Save Changes</GlassButton>
                                         )}
                                     </div>
                                 </div>
@@ -585,11 +403,12 @@ const Scheduler: React.FC = () => {
 
                                         const singleBatchGrid = editedTimetable.timetable[batchId] || {};
                                         
+                                        // Create a temporary GeneratedTimetable-like object for TimetableView
                                         const singleBatchTimetable = {
                                             ...editedTimetable,
                                             id: `${editedTimetable.id}_${batchId}`,
                                             batchIds: [batchId],
-                                            timetable: singleBatchGrid,
+                                            timetable: singleBatchGrid, // This now expects SingleBatchTimetableGrid
                                         };
 
                                         return (
@@ -617,17 +436,17 @@ const Scheduler: React.FC = () => {
                                             {canSubmit && (
                                                 <GlassButton 
                                                     onClick={() => handleUpdateStatus('Submitted')} 
-                                                    disabled={selectedTimetableToView.status !== 'Draft' || canUndo} 
+                                                    disabled={selectedTimetable.status !== 'Draft' || isDirty} 
                                                     className="w-full"
-                                                    title={canUndo ? "Please save your changes before submitting." : "Submit for final review"}
+                                                    title={isDirty ? "Please save your changes before submitting." : "Submit for final review"}
                                                 >
                                                     Submit for Review
                                                 </GlassButton>
                                             )}
                                             {canApprove && (
                                                 <div className="flex gap-2">
-                                                    <GlassButton onClick={() => handleUpdateStatus('Approved')} disabled={selectedTimetableToView.status !== 'Submitted'} icon={Check} className="w-full">Approve</GlassButton>
-                                                    <GlassButton onClick={() => handleUpdateStatus('Rejected')} disabled={selectedTimetableToView.status !== 'Submitted'} icon={X} variant="secondary" className="w-full hover:bg-red-500/20 hover:text-red-400">Reject</GlassButton>
+                                                    <GlassButton onClick={() => handleUpdateStatus('Approved')} disabled={selectedTimetable.status !== 'Submitted'} icon={Check} className="w-full">Approve</GlassButton>
+                                                    <GlassButton onClick={() => handleUpdateStatus('Rejected')} disabled={selectedTimetable.status !== 'Submitted'} icon={X} variant="secondary" className="w-full hover:bg-red-500/20 hover:text-red-400">Reject</GlassButton>
                                                 </div>
                                             )}
                                             {!canSubmit && <p className="text-sm text-text-muted text-center py-2">You do not have permission to perform actions.</p>}
@@ -636,7 +455,7 @@ const Scheduler: React.FC = () => {
                                     <GlassPanel className="p-4 flex flex-col">
                                         <h3 className="text-lg font-bold mb-4">Comments</h3>
                                         <div className="space-y-3 max-h-48 overflow-y-auto mb-4 pr-2 flex-1">
-                                            {selectedTimetableToView.comments?.length > 0 ? selectedTimetableToView.comments.map((c, i) => (
+                                            {selectedTimetable.comments?.length > 0 ? selectedTimetable.comments.map((c, i) => (
                                                 <div key={i}>
                                                     <p className="font-semibold text-white text-sm">{c.userName}</p>
                                                     <p className="text-text-muted text-sm">{c.text}</p>
@@ -667,27 +486,14 @@ const Scheduler: React.FC = () => {
                 groupedOptions={batchOptions}
                 initialSelected={selectedBatchIds}
             />
-            {substituteTarget && editedTimetable && (
+            {substituteTarget && (
                  <SubstituteModal
                     isOpen={isSubstituteModalOpen}
                     onClose={() => setIsSubstituteModalOpen(false)}
                     onConfirm={handleCreateSubstitution}
                     targetAssignment={substituteTarget}
-                    currentTimetableGrid={editedTimetable.timetable}
                 />
             )}
-            <AIEngineConsole 
-                isVisible={isConsoleVisible}
-                onClose={() => setIsConsoleVisible(false)}
-                messages={consoleMessages}
-                isLoading={isLoading}
-            />
-             <AIComparisonModal
-                isOpen={isComparisonModalOpen}
-                onClose={() => setIsComparisonModalOpen(false)}
-                analysis={comparisonResult}
-                isLoading={isComparing}
-            />
         </>
     );
 };

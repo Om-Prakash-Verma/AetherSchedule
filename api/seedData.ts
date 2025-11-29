@@ -90,7 +90,7 @@ const batches: Batch[] = [
 const baseUsers: User[] = [
   { id: 'user_super_admin', name: 'Super Admin', email: 'super.admin@test.com', role: 'SuperAdmin' },
   { id: 'user_timetable_manager', name: 'Timetable Manager', email: 'manager@test.com', role: 'TimetableManager' },
-  { id: 'user_cs_hod', name: 'CS Department Head', email: 'cs.hod@test.com', role: 'DepartmentHead', departmentId: cseDeptId },
+  { id: 'user_cs_hod', name: 'CS Department Head', email: 'cs.hod@test.com', role: 'DepartmentHead' },
 ];
 
 const facultyUsers: User[] = faculty.map(f => ({

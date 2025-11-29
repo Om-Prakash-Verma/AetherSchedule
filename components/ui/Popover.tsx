@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useCallback, createContext, useContext, useState } from 'react';
 
 interface PopoverContextType {
@@ -60,8 +59,7 @@ export const PopoverTrigger: React.FC<{ children: React.ReactElement; asChild?: 
   const { triggerRef, onOpenChange, open } = usePopover();
   
   if (asChild) {
-    // FIX: Cast the props object to satisfy TypeScript's strict checking for the 'ref' property with React.cloneElement.
-    return React.cloneElement(children, { ref: triggerRef } as { ref: React.RefObject<HTMLElement | null> });
+    return React.cloneElement(children, { ref: triggerRef });
   }
 
   return (

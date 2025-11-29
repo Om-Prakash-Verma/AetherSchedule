@@ -4,13 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "npm run db:push && npm run db:seed && concurrently --kill-others-on-fail \"npm:dev:api\" \"npm:dev:vite\"",
+    "dev": "npm run db:push && concurrently --kill-others-on-fail \"npm:dev:api\" \"npm:dev:vite\"",
     "dev:vite": "wait-on tcp:8787 && vite",
-    "dev:api": "tsx watch scripts/dev-server.ts",
+    "dev:api": "tsx watch api/dev-server.ts",
     "build": "vite build",
     "serve": "vite preview",
     "db:push": "drizzle-kit push",
-    "db:seed": "tsx scripts/seed.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
@@ -18,7 +17,6 @@
     "@hono/zod-validator": "^0.2.2",
     "@neondatabase/serverless": "^1.0.1",
     "@radix-ui/react-slider": "^1.2.0",
-    "@tanstack/react-query": "^5.51.1",
     "drizzle-orm": "^0.44.5",
     "hono": "^4.5.1",
     "lucide-react": "^0.408.0",
@@ -35,7 +33,6 @@
     "concurrently": "^8.2.2",
     "drizzle-kit": "^0.31.4",
     "dotenv": "^16.4.5",
-    "pg": "^8.12.0",
     "tsx": "^4.16.2",
     "typescript": "^5.5.3",
     "vite": "^5.3.4",

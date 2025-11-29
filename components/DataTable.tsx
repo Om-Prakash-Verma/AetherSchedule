@@ -1,8 +1,6 @@
 import React from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, Loader2 } from 'lucide-react';
 import { GlassButton } from './GlassButton';
-import { Skeleton } from './ui/Skeleton';
-import { cn } from '../utils/cn';
 
 interface DataTableProps<T extends { id: string }> {
   columns: {
@@ -19,59 +17,30 @@ interface DataTableProps<T extends { id: string }> {
 function DataTableInner<T extends { id: string }>({ columns, data, onEdit, onDelete, isLoading }: DataTableProps<T>) {
   if (isLoading) {
     return (
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm text-left">
-          <thead className="text-xs text-[var(--text-muted)] uppercase border-b border-[var(--border)]">
-            <tr>
-              {columns.map(col => <th key={String(col.accessor)} className="px-6 py-3">{col.header}</th>)}
-              {(onEdit || onDelete) && <th className="px-6 py-3 text-right">Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {Array.from({ length: 5 }).map((_, rowIndex) => (
-              <tr key={rowIndex} className={cn("border-b border-[var(--border)]", rowIndex % 2 !== 0 && 'bg-panel-strong/40')}>
-                {columns.map((col, colIndex) => (
-                  <td key={colIndex} className="px-6 py-4">
-                    <Skeleton className="h-4 w-full rounded-md" />
-                  </td>
-                ))}
-                {(onEdit || onDelete) && (
-                  <td className="px-6 py-4">
-                    <div className="flex justify-end items-center gap-2">
-                      <Skeleton className="h-8 w-8 rounded-lg" />
-                      <Skeleton className="h-8 w-8 rounded-lg" />
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="flex items-center justify-center py-10 text-text-muted">
+        <Loader2 className="animate-spin mr-2" /> Loading data...
       </div>
     );
   }
 
   if (!data || data.length === 0) {
-    return <div className="text-center py-10 text-[var(--text-muted)]">No data available.</div>;
+    return <div className="text-center py-10 text-text-muted">No data available.</div>;
   }
 
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm text-left">
-        <thead className="text-xs text-[var(--text-muted)] uppercase border-b border-[var(--border)]">
+        <thead className="text-xs text-text-muted uppercase border-b border-[var(--border)]">
           <tr>
             {columns.map(col => <th key={String(col.accessor)} className="px-6 py-3">{col.header}</th>)}
             {(onEdit || onDelete) && <th className="px-6 py-3 text-right">Actions</th>}
           </tr>
         </thead>
         <tbody>
-          {data.map((item, index) => (
-            <tr key={item.id} className={cn(
-                "border-b border-[var(--border)] transition-colors duration-200 hover:bg-panel",
-                index % 2 !== 0 ? 'bg-panel-strong/40' : 'bg-transparent'
-            )}>
+          {data.map(item => (
+            <tr key={item.id} className="border-b border-[var(--border)] hover:bg-white/10">
               {columns.map(col => (
-                <td key={String(col.accessor)} className="px-6 py-4 text-[var(--text-white)]">
+                <td key={String(col.accessor)} className="px-6 py-4 text-white">
                   {col.render ? col.render(item) : String(item[col.accessor] ?? '')}
                 </td>
               ))}
@@ -79,7 +48,7 @@ function DataTableInner<T extends { id: string }>({ columns, data, onEdit, onDel
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end items-center gap-2">
                     {onEdit && <GlassButton variant="secondary" title="Edit item" onClick={() => onEdit(item)} className="p-2"><Pencil size={14} /></GlassButton>}
-                    {onDelete && <GlassButton variant="secondary" title="Delete item" onClick={() => onDelete(item)} className="p-2 hover:bg-[hsl(var(--red-hsl)_/_0.2)] hover:text-[var(--red-400)]"><Trash2 size={14} /></GlassButton>}
+                    {onDelete && <GlassButton variant="secondary" title="Delete item" onClick={() => onDelete(item)} className="p-2 hover:bg-red-500/20 hover:text-red-400"><Trash2 size={14} /></GlassButton>}
                   </div>
                 </td>
               )}

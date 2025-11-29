@@ -70,8 +70,7 @@ export const runScheduler = async (batchIds: string[]): Promise<GeneratedTimetab
       version: 1, 
       status: 'Draft', 
       comments: [],
-      // FIX: Changed to a Date object to match the type definition.
-      createdAt: new Date(),
+      createdAt: new Date().toISOString(),
       metrics: candidate.metrics, 
       timetable: candidate.timetable,
     }));
