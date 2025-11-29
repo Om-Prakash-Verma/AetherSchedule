@@ -9,8 +9,8 @@ interface ToastProps {
 }
 
 const icons = {
-  success: <CheckCircle className="text-green-400" />,
-  error: <XCircle className="text-red-400" />,
+  success: <CheckCircle className="text-[var(--green-400)]" />,
+  error: <XCircle className="text-[var(--red-400)]" />,
   info: <Info className="text-blue-400" />,
 };
 
@@ -39,9 +39,9 @@ export const Toast: React.FC<ToastProps> = ({ toast, onDismiss }) => {
     >
       <div className="shrink-0 pt-0.5">{icons[toast.type]}</div>
       <div className="flex-1">
-        <p className="text-white font-semibold text-sm">{toast.message}</p>
+        <p className="text-[var(--text-white)] font-semibold text-sm">{toast.message}</p>
       </div>
-      <button onClick={handleDismiss} className="shrink-0 text-text-muted hover:text-white">
+      <button onClick={handleDismiss} className="shrink-0 text-[var(--text-muted)] hover:text-[var(--text-white)]">
         <X size={18} />
       </button>
       <div

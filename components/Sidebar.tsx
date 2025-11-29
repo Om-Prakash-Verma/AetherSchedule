@@ -32,7 +32,8 @@ export const Sidebar: React.FC = () => {
     }
 
     if (userRole === 'DepartmentHead') {
-        return ['Dashboard', 'Scheduler', 'Data Management', 'Constraints', 'Reports'].includes(item.name);
+        // FIX: Corrected 'Reports' to 'Analytics' to match the NAV_ITEMS constant.
+        return ['Dashboard', 'Scheduler', 'Data Management', 'Constraints', 'Analytics'].includes(item.name);
     }
     
     // SuperAdmin and TimetableManager see all other items.
@@ -47,8 +48,8 @@ export const Sidebar: React.FC = () => {
     `}>
         <div className={`p-4 flex items-center gap-3 border-b border-[var(--border)] shrink-0 transition-all duration-300 ${isSidebarCollapsed ? 'justify-center h-[73px]' : 'h-[73px]'}`}>
             <University className="text-[var(--accent)] shrink-0" size={28} />
-            <span className={`text-xl font-bold text-white transition-opacity duration-200 ${isSidebarCollapsed ? 'opacity-0 hidden' : 'opacity-100'}`}>AetherSchedule</span>
-            <button onClick={toggleSidebar} className="md:hidden ml-auto text-text-muted">
+            <span className={`text-xl font-bold text-[var(--text-white)] transition-opacity duration-200 ${isSidebarCollapsed ? 'opacity-0 hidden' : 'opacity-100'}`}>AetherSchedule</span>
+            <button onClick={toggleSidebar} className="md:hidden ml-auto text-[var(--text-muted)]">
                 <X size={24} />
             </button>
         </div>
@@ -62,12 +63,12 @@ export const Sidebar: React.FC = () => {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all duration-200 group relative
               ${isSidebarCollapsed ? 'justify-center' : ''}
               ${ currentPage === item.name
-                ? 'text-white'
-                : 'text-text-muted hover:bg-white/10 hover:text-white'
+                ? 'bg-panel-strong text-white'
+                : 'text-[var(--text-muted)] hover:bg-panel-strong hover:text-[var(--text-white)]'
             }`}
           >
              {currentPage === item.name && (
-                <span className="absolute inset-0 bg-[var(--accent)]/10 border border-[var(--accent)]/30 rounded-lg shadow-inner" style={{boxShadow: 'inset 0 0 10px 0 hsl(217.2 91.2% 59.8% / 0.2)'}}></span>
+                <span className="absolute left-0 top-2 bottom-2 w-1 bg-accent rounded-r-full"></span>
              )}
             <item.icon className={`h-5 w-5 shrink-0 transition-colors ${currentPage === item.name ? 'text-[var(--accent)]' : ''}`} />
             <span className={`relative transition-opacity duration-200 whitespace-nowrap ${isSidebarCollapsed ? 'opacity-0 hidden' : 'opacity-100'}`}>{item.name}</span>
@@ -78,18 +79,18 @@ export const Sidebar: React.FC = () => {
       {/* User Profile & Logout */}
       <div className="p-2 border-t border-[var(--border)] shrink-0">
           <div className={`p-2 flex items-center gap-3 ${isSidebarCollapsed ? 'flex-col' : ''}`}>
-              <div className="w-10 h-10 rounded-full bg-[var(--accent)]/20 border border-[var(--accent)]/30 flex items-center justify-center font-bold text-[var(--accent)] shrink-0">
+              <div className="w-10 h-10 rounded-full bg-[hsl(var(--accent-hsl)_/_0.2)] border border-[hsl(var(--accent-hsl)_/_0.3)] flex items-center justify-center font-bold text-[var(--accent)] shrink-0">
                   {user?.name.charAt(0)}
               </div>
               <div className={`flex-1 overflow-hidden transition-opacity duration-200 ${isSidebarCollapsed ? 'opacity-0 hidden' : 'opacity-100'}`}>
-                  <p className="font-semibold text-sm text-white truncate">{user?.name}</p>
-                  <p className="text-xs text-text-muted truncate">{user?.role}</p>
+                  <p className="font-semibold text-sm text-[var(--text-white)] truncate">{user?.name}</p>
+                  <p className="text-xs text-[var(--text-muted)] truncate">{user?.role}</p>
               </div>
           </div>
           <button
             onClick={logout}
             title="Logout"
-            className={`w-full flex items-center gap-3 px-4 py-3 mt-2 rounded-lg text-sm font-medium text-text-muted hover:bg-white/10 hover:text-white transition-colors
+            className={`w-full flex items-center gap-3 px-4 py-3 mt-2 rounded-lg text-sm font-medium text-[var(--text-muted)] hover:bg-panel-strong hover:text-[var(--text-white)] transition-colors
              ${isSidebarCollapsed ? 'justify-center' : ''}`}
           >
             <LogOut className="h-5 w-5 shrink-0" />
@@ -100,7 +101,7 @@ export const Sidebar: React.FC = () => {
       {/* Collapse Toggle */}
       <button 
         onClick={toggleSidebarCollapse} 
-        className="hidden md:block absolute -right-3 top-20 bg-panel border border-[var(--border)] rounded-full p-1.5 text-text-muted hover:text-white transition-all hover:border-[var(--accent)]/50"
+        className="hidden md:block absolute -right-3 top-20 bg-panel border border-[var(--border)] rounded-full p-1.5 text-[var(--text-muted)] hover:text-[var(--text-white)] transition-all hover:border-[hsl(var(--accent-hsl)_/_0.5)]"
       >
         {isSidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
       </button>

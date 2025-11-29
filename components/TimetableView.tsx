@@ -1,9 +1,15 @@
+
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { GlassPanel } from './GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { DAYS_OF_WEEK } from '../constants';
 import type { GeneratedTimetable, ClassAssignment, Conflict, DropChange, SingleBatchTimetableGrid, Substitution } from '../types';
 import { GripVertical, AlertTriangle, Replace, UserCheck } from 'lucide-react';
+// FIX: Import useQuery and api to fetch data directly.
+import { useQuery } from '@tanstack/react-query';
+import * as api from '../services';
 
 interface TimetableViewProps {
   timetableData: Omit<GeneratedTimetable, 'timetable'> & { timetable: SingleBatchTimetableGrid };
@@ -36,25 +42,15 @@ const toYyyyMmDd = (date: Date) => {
 export const TimetableView: React.FC<TimetableViewProps> = ({ 
     timetableData, isEditable = false, onDropAssignment, onFindSubstitute, conflictMap, substitutions = [], viewDate = new Date() 
 }) => {
-  const { subjects, faculty, rooms, batches, timeSlots } = useAppContext();
+  // FIX: Fetch data with useQuery instead of getting it from context.
+  const { timeSlots } = useAppContext();
+  const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
+  const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
+  const { data: rooms = [] } = useQuery({ queryKey: ['rooms'], queryFn: api.getRooms });
+  const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
   
   const [draggingItem, setDraggingItem] = useState<ClassAssignment | null>(null);
-  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
-  const viewRef = useRef<HTMLDivElement>(null);
   
-  // Effect to close the substitute button when clicking outside the timetable view
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (viewRef.current && !viewRef.current.contains(event.target as Node)) {
-        setSelectedAssignmentId(null);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
   const batchColorMap = useMemo(() => {
     const map = new Map<string, string>();
     const allBatchIds = batches.map(b => b.id);
@@ -109,26 +105,18 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
     
     setDraggingItem(null);
   };
-
-  const handleClassClick = (e: React.MouseEvent<HTMLDivElement>, assignment: ClassAssignment) => {
-    // Disable substitute finder for multi-teacher classes
-    if (!onFindSubstitute || assignment.facultyIds.length > 1) return;
-    e.stopPropagation();
-    setSelectedAssignmentId(prevId => prevId === assignment.id ? null : assignment.id);
-  };
   
   const handleSubstituteButtonClick = (e: React.MouseEvent, assignment: ClassAssignment) => {
     e.stopPropagation();
     if (onFindSubstitute) {
       onFindSubstitute(assignment);
     }
-    setSelectedAssignmentId(null);
   };
 
   const viewDateStr = toYyyyMmDd(viewDate);
 
   return (
-    <div ref={viewRef} className="overflow-x-auto relative printable-area">
+    <div className="overflow-x-auto relative printable-area">
       <div className="grid grid-cols-[auto_repeat(6,minmax(120px,1fr))] gap-1 min-w-[900px]">
         {/* Header */}
         <div className="sticky top-0 left-0 z-20 bg-panel/80 backdrop-blur-sm" />
@@ -170,73 +158,62 @@ export const TimetableView: React.FC<TimetableViewProps> = ({
               return (
                 <div 
                   key={`${dayIndex}-${slotIndex}`} 
-                  className="h-28 bg-panel-strong border border-transparent hover:border-accent/20 transition-colors relative"
+                  className="h-28 bg-panel-strong border border-transparent hover:border-accent/20 transition-colors relative group"
                   onDragOver={handleDragOver}
                   onDrop={(e) => handleDrop(e, dayIndex, slotIndex)}
                 >
                   {assignment && displayFaculty.length > 0 && (
-                    <>
-                        <div
-                          draggable={isEditable}
-                          onDragStart={(e) => handleDragStart(e, assignment)}
-                          onClick={(e) => handleClassClick(e, assignment)}
-                          className="group w-full h-full"
-                        >
-                            <GlassPanel 
-                              title={activeSubstitution ? `Original Teachers: ${faculty.filter(f => assignment.facultyIds.includes(f.id)).map(f => f.name).join(', ')}` : ''}
-                              className={`h-full w-full p-2 flex flex-col justify-between text-left text-xs relative overflow-hidden transition-all duration-200 border
-                              ${onFindSubstitute && assignment.facultyIds.length === 1 ? 'cursor-pointer' : ''}
-                              ${isEditable ? 'cursor-grab active:cursor-grabbing' : ''}
-                              ${assignmentConflicts ? 'border-2 border-danger shadow-lg shadow-danger/20' : activeSubstitution ? 'border-2 border-teal-500/80' : batchColor }
-                              ${draggingItem?.id === assignment.id ? 'opacity-50 scale-95' : ''}`}
-                            >
-                              {activeSubstitution && (
-                                <div className="absolute top-1 left-1 flex items-center gap-1 text-teal-400 bg-teal-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
-                                    <UserCheck size={10}/>
-                                    <span>SUB</span>
+                      <div
+                        draggable={isEditable}
+                        onDragStart={(e) => handleDragStart(e, assignment)}
+                        className="w-full h-full"
+                      >
+                          <GlassPanel 
+                            title={activeSubstitution ? `Original Teachers: ${faculty.filter(f => assignment.facultyIds.includes(f.id)).map(f => f.name).join(', ')}` : ''}
+                            className={`h-full w-full p-2 flex flex-col justify-between text-left text-xs relative overflow-hidden transition-all duration-200 border
+                            ${isEditable ? 'cursor-grab active:cursor-grabbing' : ''}
+                            ${assignmentConflicts ? 'border-2 border-danger shadow-lg shadow-danger/20' : activeSubstitution ? 'border-2 border-teal-500/80' : batchColor }
+                            ${draggingItem?.id === assignment.id ? 'opacity-50 scale-95' : ''}`}
+                          >
+                            {activeSubstitution && (
+                              <div className="absolute top-1 left-1 flex items-center gap-1 text-teal-400 bg-teal-900/50 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+                                  <UserCheck size={10}/>
+                                  <span>SUB</span>
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <p className="font-bold text-white truncate">{displaySubject?.name || 'Unknown'}</p>
+                              <p className="text-text-muted truncate" title={displayFaculty.map(f => f.name).join(', ')}>{displayFaculty.map(f => f.name).join(', ') || 'Unknown'}</p>
+                              <p className="text-text-muted truncate">@{rooms.find(r => r.id === assignment.roomId)?.name || 'Unknown'}</p>
+                              { (timetableData.batchIds.length > 1 || timetableData.batchIds.length === 0) && (
+                                  <p className="text-[var(--accent)] text-xs truncate mt-1">{getBatchForAssignment(assignment)?.name || 'Unknown'}</p>
+                              )};
+                            </div>
+                            <div className="absolute top-1 right-1 flex items-center gap-1">
+                              {/* FIX: Added a detailed tooltip to the conflict icon for better UX. */}
+                              {assignmentConflicts && (
+                                <div className="relative group/tooltip">
+                                  <AlertTriangle className="text-danger animate-pulse-danger" size={16} />
+                                  <div className="absolute bottom-full mb-2 right-0 w-max max-w-xs px-3 py-2 text-xs text-white bg-panel-strong rounded-md opacity-0 group-hover/tooltip:opacity-100 transition-opacity pointer-events-none z-20 border border-[var(--border)] shadow-lg">
+                                    <ul className="list-disc list-inside space-y-1 text-left">
+                                      {assignmentConflicts.map((c, i) => <li key={i}>{c.message}</li>)}
+                                    </ul>
+                                  </div>
                                 </div>
                               )}
-                              <div className="flex-1">
-                                <p className="font-bold text-white truncate">{displaySubject?.name || 'Unknown'}</p>
-                                <p className="text-text-muted truncate" title={displayFaculty.map(f => f.name).join(', ')}>{displayFaculty.map(f => f.name).join(', ') || 'Unknown'}</p>
-                                <p className="text-text-muted truncate">@{rooms.find(r => r.id === assignment.roomId)?.name || 'Unknown'}</p>
-                                { (timetableData.batchIds.length > 1 || timetableData.batchIds.length === 0) && (
-                                    <p className="text-[var(--accent)] text-xs truncate mt-1">{getBatchForAssignment(assignment)?.name || 'Unknown'}</p>
-                                )}
-                              </div>
-                              <div className="absolute top-1 right-1 flex items-center gap-1">
-                                {/* FIX: Added a detailed tooltip to the conflict icon for better UX. */}
-                                {assignmentConflicts && (
-                                  <div className="relative group">
-                                    <AlertTriangle className="text-danger animate-pulse-danger" size={16} />
-                                    <div className="absolute bottom-full mb-2 right-0 w-max max-w-xs px-3 py-2 text-xs text-white bg-panel-strong rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 border border-[var(--border)] shadow-lg">
-                                      <ul className="list-disc list-inside space-y-1 text-left">
-                                        {assignmentConflicts.map((c, i) => <li key={i}>{c.message}</li>)}
-                                      </ul>
-                                    </div>
-                                  </div>
-                                )}
-                                {isEditable && <GripVertical className="text-text-muted/20 group-hover:text-text-muted" size={16} />}
-                              </div>
-                            </GlassPanel>
-                        </div>
-
-                        {onFindSubstitute && assignment.facultyIds.length === 1 && selectedAssignmentId === assignment.id && (
-                            <div 
-                                className="absolute bottom-0 translate-y-[calc(100%+4px)] left-1/2 -translate-x-1/2 z-20 w-auto"
-                                onClick={(e) => e.stopPropagation()}
-                            >
+                              {isEditable && <GripVertical className="text-text-muted/20 group-hover:text-text-muted" size={16} />}
+                            </div>
+                            {isEditable && onFindSubstitute && assignment.facultyIds.length === 1 && (
                                 <button
                                     onClick={(e) => handleSubstituteButtonClick(e, assignment)}
-                                    className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 transition-colors rounded-md shadow-lg animate-fade-in-up whitespace-nowrap"
-                                    style={{ animationDuration: '150ms' }}
+                                    className="absolute bottom-1 right-1 z-10 p-1.5 rounded-md bg-panel-strong/50 hover:bg-panel text-text-muted hover:text-accent opacity-0 group-hover:opacity-100 transition-all duration-200"
+                                    title={activeSubstitution ? "Change Substitute" : "Find Substitute"}
                                 >
                                     <Replace size={14} />
-                                    Find Substitute Teacher
                                 </button>
-                            </div>
-                        )}
-                    </>
+                            )}
+                          </GlassPanel>
+                      </div>
                   )}
                 </div>
               );

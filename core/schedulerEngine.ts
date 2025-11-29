@@ -1,6 +1,8 @@
-import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid, TimetableSettings, PinnedAssignment, FacultyAllocation } from '../types';
+
+
+import type { Batch, Subject, Faculty, Room, Constraints, TimetableGrid, ClassAssignment, TimetableMetrics, GlobalConstraints, GeneratedTimetable, TimetableFeedback, SingleBatchTimetableGrid, TimetableSettings, PinnedAssignment, FacultyAllocation, DiagnosticIssue } from '../types';
 import { isFacultyAvailable, isRoomAvailable, isBatchAvailable } from './conflictChecker';
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, type GenerateContentResponse } from "@google/genai";
 import { generateTimeSlots } from '../utils/time';
 
 // --- GEMINI API INITIALIZATION ---
@@ -18,6 +20,8 @@ interface SchedulerInput {
   days: string[];
   timetableSettings: TimetableSettings,
   candidateCount: number;
+  // FIX: Added optional baseTimetable property to satisfy the API call.
+  baseTimetable?: TimetableGrid;
 }
 
 // --- ALGORITHM CONFIGURATION ---
@@ -56,510 +60,1051 @@ const calculateMetrics = (timetable: TimetableGrid, batches: Batch[], allFaculty
     for (const batchId in timetable) {
         const batchGrid = timetable[batchId];
         for (let day = 0; day < 6; day++) {
-            const daySlots = batchGrid[day] ? Object.keys(batchGrid[day]).map(Number).sort((a, b) => a - b) : [];
-            for (let i = 0; i < daySlots.length - 1; i++) {
-                studentGaps += (daySlots[i+1] - daySlots[i] - 1);
+            const daySlots = batchGrid[day] ? Object.keys(batchGrid[day]).map(Number).sort((a,b)=>a-b) : [];
+            if (daySlots.length > 1) {
+                for (let i = 0; i < daySlots.length - 1; i++) {
+                    studentGaps += (daySlots[i+1] - daySlots[i] - 1);
+                }
             }
         }
     }
 
-    // Faculty Gaps, Workload & Preference Violations
+    // Faculty Gaps & Workload
     const facultyWorkload: Record<string, number> = {};
-    allFaculty.forEach(f => facultyWorkload[f.id] = 0);
-    const facultyAssignmentsByDay: Record<string, Record<number, number[]>> = {};
-    allFaculty.forEach(f => facultyAssignmentsByDay[f.id] = {});
-
     const allAssignments = flattenTimetable(timetable);
-
-    for (const assignment of allAssignments) {
-        for (const facultyId of assignment.facultyIds) {
-            facultyWorkload[facultyId]++;
+    for(const facultyMember of allFaculty) {
+        facultyWorkload[facultyMember.id] = 0;
+        for (let day = 0; day < 6; day++) {
+            const daySlots = allAssignments
+                .filter(a => a.day === day && a.facultyIds.includes(facultyMember.id))
+                .map(a => a.slot)
+                .sort((a,b) => a-b);
             
-            if (!facultyAssignmentsByDay[facultyId][assignment.day]) {
-                facultyAssignmentsByDay[facultyId][assignment.day] = [];
+            facultyWorkload[facultyMember.id] += daySlots.length;
+            
+            if (daySlots.length > 1) {
+                for (let i = 0; i < daySlots.length - 1; i++) {
+                    facultyGaps += (daySlots[i+1] - daySlots[i] - 1);
+                }
             }
-            facultyAssignmentsByDay[facultyId][assignment.day].push(assignment.slot);
-
-            const facultyMember = allFaculty.find(f => f.id === facultyId);
-            if (facultyMember?.preferredSlots && facultyMember.preferredSlots[assignment.day] && !facultyMember.preferredSlots[assignment.day].includes(assignment.slot)) {
-                preferenceViolations++;
-            }
-        }
-    }
-
-    for (const facultyId in facultyAssignmentsByDay) {
-        for (const day in facultyAssignmentsByDay[facultyId]) {
-            const daySlots = facultyAssignmentsByDay[facultyId][day].sort((a,b) => a - b);
-            for (let i = 0; i < daySlots.length - 1; i++) {
-                facultyGaps += (daySlots[i+1] - daySlots[i] - 1);
+            
+            if (facultyMember.preferredSlots) {
+                for (const slot of daySlots) {
+                    if (!facultyMember.preferredSlots[day]?.includes(slot)) {
+                        preferenceViolations++;
+                    }
+                }
             }
         }
     }
-    
-    // Faculty Workload Distribution (variance)
+
+    // Faculty Workload Distribution
     const workloads = Object.values(facultyWorkload);
-    const avgWorkload = workloads.reduce((sum, w) => sum + w, 0) / (workloads.length || 1);
-    const workloadVariance = workloads.reduce((sum, w) => sum + Math.pow(w - avgWorkload, 2), 0) / (workloads.length || 1);
-    const facultyWorkloadDistribution = Math.round(workloadVariance);
-
-    const score = 1000 - 
-        (studentGaps * globalConstraints.studentGapWeight) -
-        (facultyGaps * globalConstraints.facultyGapWeight) -
-        (facultyWorkloadDistribution * globalConstraints.facultyWorkloadDistributionWeight) -
-        (preferenceViolations * globalConstraints.facultyPreferenceWeight);
+    if (workloads.length > 1) {
+        const mean = workloads.reduce((a, b) => a + b, 0) / workloads.length;
+        const variance = workloads.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / workloads.length;
+        var facultyWorkloadDistribution = Math.sqrt(variance);
+    } else {
+        var facultyWorkloadDistribution = 0;
+    }
     
+    const gc = globalConstraints;
+    // Calculate score (higher is better)
+    const score = 1000 
+        - (studentGaps * gc.aiStudentGapWeight)
+        - (facultyGaps * gc.aiFacultyGapWeight)
+        - (facultyWorkloadDistribution * gc.aiFacultyWorkloadDistributionWeight)
+        - (preferenceViolations * gc.aiFacultyPreferenceWeight);
+
     return {
         score: Math.max(0, score),
-        hardConflicts: 0,
+        hardConflicts: 0, // Hard conflicts are resolved during generation, so this is 0
         studentGaps,
         facultyGaps,
         facultyWorkloadDistribution,
-        preferenceViolations
-    };
-};
-
-// --- CORE TYPES ---
-type Chromosome = { timetable: TimetableGrid; metrics: TimetableMetrics; };
-interface ClassRequirement { subject: Subject; batch: Batch; }
-
-// --- INITIALIZATION ---
-const getRequiredClasses = (batches: Batch[], allSubjects: Subject[], pinnedAssignments: PinnedAssignment[]): ClassRequirement[] => {
-    const requirements: ClassRequirement[] = [];
-    for (const batch of batches) {
-        for (const subjectId of batch.subjectIds) {
-            const subject = allSubjects.find(s => s.id === subjectId);
-            if (subject) {
-                for (let i = 0; i < subject.hoursPerWeek; i++) {
-                    requirements.push({ subject, batch });
-                }
-            }
-        }
-    }
-    return requirements;
-};
-
-const createChromosome = (
-    requiredClasses: ClassRequirement[],
-    slots: string[],
-    pinnedClassAssignments: ClassAssignment[],
-    input: Omit<SchedulerInput, 'candidateCount'>
-): Chromosome => {
-    const { batches, allFaculty, allRooms, constraints, globalConstraints, days, approvedTimetables, facultyAllocations } = input;
-    const timetable: TimetableGrid = {};
-    batches.forEach(b => timetable[b.id] = {});
-
-    for (const pin of pinnedClassAssignments) {
-        if (!timetable[pin.batchId]) timetable[pin.batchId] = {};
-        const batchGrid = timetable[pin.batchId];
-        if (!batchGrid[pin.day]) batchGrid[pin.day] = {};
-        batchGrid[pin.day][pin.slot] = pin;
-    }
-
-    const approvedAssignments = approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable));
-    const substitutionAssignments: ClassAssignment[] = constraints.substitutions.map(sub => ({
-        id: sub.id,
-        subjectId: sub.substituteSubjectId,
-        facultyIds: [sub.substituteFacultyId],
-        roomId: allRooms.find(r => r.id === approvedAssignments.find(a => a.id === sub.originalAssignmentId)?.roomId)?.id || '',
-        batchId: sub.batchId, day: sub.day, slot: sub.slot,
-    }));
-
-    const shuffledClasses = [...requiredClasses].sort(() => Math.random() - 0.5);
-
-    for (const req of shuffledClasses) {
-        const potentialSlots = days
-            .flatMap((_, dayIndex) => slots.map((_, slotIndex) => ({ day: dayIndex, slot: slotIndex })))
-            .sort(() => Math.random() - 0.5);
-        
-        for (const { day, slot } of potentialSlots) {
-            const currentDraftAssignments = flattenTimetable(timetable);
-            const allExistingAssignments = [...approvedAssignments, ...substitutionAssignments, ...currentDraftAssignments];
-
-            if (isBatchAvailable(req.batch.id, day, slot, allExistingAssignments)) {
-                
-                const allocation = facultyAllocations.find(fa => fa.batchId === req.batch.id && fa.subjectId === req.subject.id);
-                const qualifiedFaculty = allFaculty.filter(f => f.subjectIds.includes(req.subject.id));
-
-                let selectedFacultyIds: string[] = [];
-                if (allocation && allocation.facultyIds.length > 0) {
-                    const allAllocatedAvailable = allocation.facultyIds.every(fid => 
-                        isFacultyAvailable(fid, day, slot, allExistingAssignments, constraints.facultyAvailability)
-                    );
-                    if (allAllocatedAvailable) {
-                        selectedFacultyIds = allocation.facultyIds;
-                    }
-                } else {
-                    // Fallback for non-allocated subjects (typically non-labs)
-                    const availableFaculty = qualifiedFaculty.find(f => isFacultyAvailable(f.id, day, slot, allExistingAssignments, constraints.facultyAvailability));
-                    if (availableFaculty) {
-                        selectedFacultyIds = [availableFaculty.id];
-                    }
-                }
-
-                if (selectedFacultyIds.length > 0) {
-                    const batchRoomPool = (req.batch.allocatedRoomIds && req.batch.allocatedRoomIds.length > 0)
-                        ? allRooms.filter(r => req.batch.allocatedRoomIds!.includes(r.id))
-                        : allRooms;
-                    
-                    const suitableRooms = batchRoomPool.filter(r =>
-                        isRoomAvailable(r.id, day, slot, req.batch, req.subject, r, allExistingAssignments)
-                    );
-
-                    if (suitableRooms.length > 0) {
-                        const assignment: ClassAssignment = { 
-                            id: generateId(), batchId: req.batch.id, subjectId: req.subject.id, 
-                            facultyIds: selectedFacultyIds,
-                            roomId: suitableRooms[Math.floor(Math.random() * suitableRooms.length)].id, 
-                            day, slot 
-                        };
-                        
-                        const batchGrid = timetable[req.batch.id];
-                        if (!batchGrid[day]) batchGrid[day] = {};
-                        batchGrid[day][slot] = assignment;
-                        break; // Class placed, move to next requirement
-                    }
-                }
-            }
-        }
-    }
-    return { timetable, metrics: calculateMetrics(timetable, batches, allFaculty, globalConstraints) };
-};
-
-// --- ADVANCED OPERATOR: GREEDY REPAIR ---
-const greedyRepair = (chromosome: Chromosome, requiredClasses: ClassRequirement[], slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
-    const repairedTimetable = JSON.parse(JSON.stringify(chromosome.timetable));
-    const { batches, allSubjects, allFaculty, allRooms, constraints, approvedTimetables, facultyAllocations } = input;
-
-    const requiredCounts: Record<string, number> = {}; // key: "batchId_subjectId"
-    for (const req of requiredClasses) {
-        const key = `${req.batch.id}_${req.subject.id}`;
-        requiredCounts[key] = (requiredCounts[key] || 0) + 1;
-    }
-
-    let currentAssignments = flattenTimetable(repairedTimetable);
-    const currentCounts: Record<string, { count: number; assignments: ClassAssignment[] }> = {};
-    for (const assignment of currentAssignments) {
-        const key = `${assignment.batchId}_${assignment.subjectId}`;
-        if (!currentCounts[key]) currentCounts[key] = { count: 0, assignments: [] };
-        currentCounts[key].count++;
-        currentCounts[key].assignments.push(assignment);
-    }
-
-    // Phase 1: Remove over-scheduled classes
-    for (const key in currentCounts) {
-        const required = requiredCounts[key] || 0;
-        let excess = currentCounts[key].count - required;
-        if (excess > 0) {
-            const assignmentsToRemove = currentCounts[key].assignments.sort(() => 0.5 - Math.random()).slice(0, excess);
-            for (const assignment of assignmentsToRemove) {
-                 if (repairedTimetable[assignment.batchId]?.[assignment.day]?.[assignment.slot]) {
-                    delete repairedTimetable[assignment.batchId][assignment.day][assignment.slot];
-                }
-            }
-        }
-    }
-    
-    // Recalculate current assignments after deletion
-    currentAssignments = flattenTimetable(repairedTimetable);
-    const newCurrentCounts: Record<string, number> = {};
-    for (const assignment of currentAssignments) {
-        const key = `${assignment.batchId}_${assignment.subjectId}`;
-        newCurrentCounts[key] = (newCurrentCounts[key] || 0) + 1;
-    }
-
-    // Phase 2: Add under-scheduled classes
-    for (const key in requiredCounts) {
-        const current = newCurrentCounts[key] || 0;
-        let deficit = requiredCounts[key] - current;
-        if (deficit > 0) {
-            const [batchId, subjectId] = key.split('_');
-            const batch = batches.find(b => b.id === batchId);
-            const subject = allSubjects.find(s => s.id === subjectId);
-            if (!batch || !subject) continue;
-            
-            for (let i = 0; i < deficit; i++) {
-                 const potentialSlots = input.days
-                    .flatMap((_, dayIndex) => slots.map((_, slotIndex) => ({ day: dayIndex, slot: slotIndex })))
-                    .sort(() => Math.random() - 0.5);
-                
-                let placed = false;
-                for (const { day, slot } of potentialSlots) {
-                    const currentDraftAssignments = flattenTimetable(repairedTimetable);
-                    const allExistingAssignments = [...approvedTimetables.flatMap(tt => flattenTimetable(tt.timetable)), ...constraints.substitutions.map(s => ({...s, id: s.id, facultyIds: [s.substituteFacultyId], subjectId: s.substituteSubjectId} as any)), ...currentDraftAssignments];
-                    
-                    if (!isBatchAvailable(batchId, day, slot, allExistingAssignments)) continue;
-
-                    const allocation = facultyAllocations.find(fa => fa.batchId === batchId && fa.subjectId === subjectId);
-                    const qualifiedFaculty = allFaculty.filter(f => f.subjectIds.includes(subjectId));
-                    
-                    let selectedFacultyIds: string[] = [];
-                    if (allocation && allocation.facultyIds.length > 0) {
-                        const allAllocatedAvailable = allocation.facultyIds.every(fid => 
-                            isFacultyAvailable(fid, day, slot, allExistingAssignments, constraints.facultyAvailability)
-                        );
-                        if (allAllocatedAvailable) {
-                            selectedFacultyIds = allocation.facultyIds;
-                        }
-                    } else {
-                        const availableFaculty = qualifiedFaculty.find(f => isFacultyAvailable(f.id, day, slot, allExistingAssignments, constraints.facultyAvailability));
-                        if (availableFaculty) {
-                            selectedFacultyIds = [availableFaculty.id];
-                        }
-                    }
-                    
-                    if (selectedFacultyIds.length > 0) {
-                        const batchRoomPool = (batch.allocatedRoomIds && batch.allocatedRoomIds.length > 0)
-                            ? allRooms.filter(r => batch.allocatedRoomIds!.includes(r.id))
-                            : allRooms;
-                        
-                        const suitableRooms = batchRoomPool.filter(r => isRoomAvailable(r.id, day, slot, batch, subject, r, allExistingAssignments));
-
-                        if (suitableRooms.length > 0) {
-                            const assignment: ClassAssignment = { id: generateId(), batchId, subjectId, facultyIds: selectedFacultyIds, roomId: suitableRooms[0].id, day, slot };
-                            if (!repairedTimetable[batchId][day]) repairedTimetable[batchId][day] = {};
-                            repairedTimetable[batchId][day][slot] = assignment;
-                            placed = true;
-                            break;
-                        }
-                    }
-                    if (placed) break;
-                }
-            }
-        }
-    }
-    
-    return {
-        timetable: repairedTimetable,
-        metrics: calculateMetrics(repairedTimetable, batches, allFaculty, input.globalConstraints),
+        preferenceViolations,
     };
 };
 
 
-// --- GEMINI AI INTEGRATION (THREE LEVELS) ---
-const getHistoricalFeedbackSummary = (approvedTimetables: GeneratedTimetable[], allFaculty: Faculty[]): string => {
-    const feedbackData = approvedTimetables.flatMap(tt => tt.feedback || []);
-    if (feedbackData.length === 0) return "No historical faculty feedback available.";
-    const ratingsByFaculty: Record<string, number[]> = {};
-    feedbackData.forEach(fb => {
-        if (!ratingsByFaculty[fb.facultyId]) ratingsByFaculty[fb.facultyId] = [];
-        ratingsByFaculty[fb.facultyId].push(fb.rating);
+// --- GEMINI-POWERED FUNCTIONS ---
+
+/**
+ * [NEW] Checks for common data integrity issues before running the scheduler.
+ */
+export const runPreflightDiagnostics = async (input: {
+    batches: Batch[];
+    allSubjects: Subject[];
+    allFaculty: Faculty[];
+    allRooms: Room[];
+    facultyAllocations: FacultyAllocation[];
+}): Promise<DiagnosticIssue[]> => {
+    const { batches, allSubjects, allFaculty, facultyAllocations } = input;
+    const issues: DiagnosticIssue[] = [];
+
+    // Check 1: Subjects without teachers
+    const facultySubjectIds = new Set(allFaculty.flatMap(f => f.subjectIds));
+    allSubjects.forEach(subject => {
+        if (!facultySubjectIds.has(subject.id)) {
+            issues.push({
+                severity: 'warning',
+                title: 'Unassigned Subject',
+                description: `The subject "${subject.name}" (${subject.code}) is not assigned to any faculty member.`,
+                suggestion: `Go to Data Management > Faculty and assign this subject to at least one faculty member.`
+            });
+        }
     });
-    let summary = "Summary of historical faculty feedback:\n";
-    for (const facultyId in ratingsByFaculty) {
-        const facultyMember = allFaculty.find(f => f.id === facultyId);
-        if (facultyMember) {
-            const avgRating = ratingsByFaculty[facultyId].reduce((a, b) => a + b, 0) / ratingsByFaculty[facultyId].length;
-            summary += `- ${facultyMember.name} has an average satisfaction rating of ${avgRating.toFixed(2)} out of 5.\n`;
+
+    // Check 2: Batches with subjects that have no qualified teachers
+    batches.forEach(batch => {
+        batch.subjectIds.forEach(subjectId => {
+            const subject = allSubjects.find(s => s.id === subjectId);
+            if (!subject) return;
+
+            const specificAllocation = facultyAllocations.find(fa => fa.batchId === batch.id && fa.subjectId === subjectId);
+            if (specificAllocation && specificAllocation.facultyIds.length > 0) {
+                return; // Has a specific teacher, so it's fine.
+            }
+
+            const hasQualifiedFaculty = allFaculty.some(f => f.subjectIds.includes(subjectId));
+            if (!hasQualifiedFaculty) {
+                 issues.push({
+                    severity: 'critical',
+                    title: 'No Qualified Faculty',
+                    description: `The subject "${subject.name}" required by batch "${batch.name}" has no faculty qualified to teach it.`,
+                    suggestion: `Assign a faculty member to teach "${subject.code}" or remove it from the batch's curriculum.`
+                });
+            }
+        });
+    });
+
+    // Check 3: Faculty without subjects
+    allFaculty.forEach(faculty => {
+        if (faculty.subjectIds.length === 0) {
+            issues.push({
+                severity: 'warning',
+                title: 'Faculty Without Subjects',
+                description: `Faculty member "${faculty.name}" is not assigned to teach any subjects.`,
+                suggestion: `Assign subjects to this faculty member or remove them if they are no longer active.`
+            });
         }
+    });
+
+    return issues;
+};
+
+/**
+ * [GEMINI] Analyzes faculty feedback to tune the weights of soft constraints.
+ */
+export const tuneConstraintWeightsWithGemini = async (
+    baseConstraints: GlobalConstraints,
+    feedback: TimetableFeedback[],
+    allFaculty: Faculty[]
+): Promise<GlobalConstraints> => {
+    if (feedback.length < 3) { // Not enough data to tune
+        return { ...baseConstraints };
     }
-    const overallAvg = feedbackData.reduce((sum, fb) => sum + fb.rating, 0) / feedbackData.length;
-    summary += `Overall average timetable satisfaction is ${overallAvg.toFixed(2)} out of 5.`;
-    return summary;
-};
-export const tuneConstraintWeightsWithGemini = async (baseConstraints: GlobalConstraints, allFeedback: TimetableFeedback[], allFaculty: Faculty[]): Promise<GlobalConstraints> => { /* ... */ return baseConstraints; };
-interface AIPhaseStrategy {
-  phases: {
-    duration: number; // as a fraction of total generations
-    operatorProbabilities: Record<LowLevelHeuristic, number>;
-  }[];
-  interventionPrompt: string;
-}
-const getGeminiPhaseStrategy = async (input: Omit<SchedulerInput, 'candidateCount'>): Promise<AIPhaseStrategy> => {
-    console.log("Generating default AI strategy (mocked).");
-    return {
-        phases: [
-            {
-                duration: 0.5,
-                operatorProbabilities: {
-                    [LowLevelHeuristic.SWAP_MUTATE]: 0.4, [LowLevelHeuristic.MOVE_MUTATE]: 0.4,
-                    [LowLevelHeuristic.DAY_WISE_CROSSOVER]: 0.2, [LowLevelHeuristic.SIMULATED_ANNEALING]: 0.0,
+
+    try {
+        const feedbackSummary = feedback.map(f => {
+            const facultyName = allFaculty.find(fac => fac.id === f.facultyId)?.name || 'Unknown Faculty';
+            return `- Faculty ${facultyName} gave a rating of ${f.rating}/5. Comment: ${f.comment || 'N/A'}`;
+        }).join('\n');
+
+        const prompt = `
+            You are an expert university administrator tuning a timetable scheduling algorithm.
+            The algorithm uses weighted constraints to score timetables. Higher weights mean a higher penalty.
+            
+            Current Base Weights:
+            - Student Gap Weight: ${baseConstraints.studentGapWeight}
+            - Faculty Gap Weight: ${baseConstraints.facultyGapWeight}
+            - Faculty Workload Variance Weight: ${baseConstraints.facultyWorkloadDistributionWeight}
+            - Faculty Preference Violation Weight: ${baseConstraints.facultyPreferenceWeight}
+
+            Recent feedback from faculty on approved timetables:
+            ${feedbackSummary}
+
+            Based on this feedback, suggest adjusted weights to improve faculty satisfaction in the future.
+            For example, if faculty complain about gaps, increase the faculty gap weight. If they seem generally happy, you can keep the weights stable.
+            Provide your response as a JSON object with the keys "studentGapWeight", "facultyGapWeight", "facultyWorkloadDistributionWeight", and "facultyPreferenceWeight".
+            Do not change weights drastically. Make subtle adjustments.
+        `;
+        
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        studentGapWeight: { type: Type.INTEGER },
+                        facultyGapWeight: { type: Type.INTEGER },
+                        facultyWorkloadDistributionWeight: { type: Type.INTEGER },
+                        facultyPreferenceWeight: { type: Type.INTEGER },
+                    },
                 },
             },
-            {
-                duration: 0.5,
-                operatorProbabilities: {
-                    [LowLevelHeuristic.SWAP_MUTATE]: 0.2, [LowLevelHeuristic.MOVE_MUTATE]: 0.2,
-                    [LowLevelHeuristic.DAY_WISE_CROSSOVER]: 0.1, [LowLevelHeuristic.SIMULATED_ANNEALING]: 0.5,
-                },
-            },
-        ],
-        interventionPrompt: "The current best timetable has a score of {score} but is stuck. It has {studentGaps} student gaps and {facultyGaps} faculty gaps. Suggest a structural change by swapping two non-pinned classes to improve the score. Respond with JSON: { from: {batchId, day, slot}, to: {batchId, day, slot} }",
-    };
-};
-const geminiCreativeIntervention = async (stuckChromosome: Chromosome, input: Omit<SchedulerInput, 'candidateCount'>): Promise<Chromosome> => {
-    console.log("Performing mocked Gemini creative intervention.");
-    const newTimetable = JSON.parse(JSON.stringify(stuckChromosome.timetable));
-    const batchIds = Object.keys(newTimetable);
-    if (batchIds.length > 0) {
-        const randomBatchId = batchIds[Math.floor(Math.random() * batchIds.length)];
-        const day1 = Math.floor(Math.random() * input.days.length);
-        let day2 = Math.floor(Math.random() * input.days.length);
-        if (input.days.length > 1) {
-            while (day1 === day2) { day2 = Math.floor(Math.random() * input.days.length); }
-        }
-        const tempDay = newTimetable[randomBatchId][day1];
-        newTimetable[randomBatchId][day1] = newTimetable[randomBatchId][day2];
-        newTimetable[randomBatchId][day2] = tempDay;
+        });
+
+        const tunedWeights = JSON.parse(response.text);
+
+        console.log('Gemini tuned weights:', tunedWeights);
+
         return {
-            timetable: newTimetable,
-            metrics: calculateMetrics(newTimetable, input.batches, input.allFaculty, input.globalConstraints),
+            ...baseConstraints,
+            aiStudentGapWeight: tunedWeights.studentGapWeight,
+            aiFacultyGapWeight: tunedWeights.facultyGapWeight,
+            aiFacultyWorkloadDistributionWeight: tunedWeights.facultyWorkloadDistributionWeight,
+            aiFacultyPreferenceWeight: tunedWeights.facultyPreferenceWeight,
+        };
+    } catch (error) {
+        console.error("Gemini weight tuning failed:", error);
+        // Fallback to base constraints if Gemini fails
+        return { 
+            ...baseConstraints,
+            aiStudentGapWeight: baseConstraints.studentGapWeight,
+            aiFacultyGapWeight: baseConstraints.facultyGapWeight,
+            aiFacultyWorkloadDistributionWeight: baseConstraints.facultyWorkloadDistributionWeight,
+            aiFacultyPreferenceWeight: baseConstraints.facultyPreferenceWeight,
         };
     }
-    return stuckChromosome;
 };
 
-// --- LOW-LEVEL HEURISTICS ---
-const tournamentSelection = (population: Chromosome[]): Chromosome => {
-    let best: Chromosome | null = null;
-    for (let i = 0; i < TOURNAMENT_SIZE; i++) {
-        const randomIndividual = population[Math.floor(Math.random() * population.length)];
-        if (best === null || randomIndividual.metrics.score > best.metrics.score) { best = randomIndividual; }
+interface Phase {
+    generations: number;
+    heuristicEnumMap: Map<LowLevelHeuristic, number>;
+}
+
+/**
+ * [GEMINI] Creates a custom, multi-phase strategy for the genetic algorithm.
+ */
+const getGeminiPhaseStrategy = async (problemSummary: {
+    numBatches: number;
+    numClasses: number;
+    numFaculty: number;
+    numRooms: number;
+    numConstraints: number;
+}): Promise<Phase[]> => {
+    try {
+        const prompt = `
+            You are an expert in hyper-heuristics for solving complex optimization problems like university timetabling.
+            I need a multi-phase strategy for a genetic algorithm. The total number of generations should be around ${MAX_GENERATIONS}.
+            
+            Problem Details:
+            - Batches to schedule: ${problemSummary.numBatches}
+            - Total classes to place: ${problemSummary.numClasses}
+            - Available Faculty: ${problemSummary.numFaculty}
+            - Available Rooms: ${problemSummary.numRooms}
+            - Pinned constraints: ${problemSummary.numConstraints}
+
+            Available low-level heuristics are: SWAP_MUTATE, MOVE_MUTATE, SIMULATED_ANNEALING, DAY_WISE_CROSSOVER.
+
+            Design a strategy with 2-4 phases. Each phase should specify:
+            1. 'generations': How many generations this phase should last.
+            2. 'heuristics': An object where keys are the heuristic names and values are their selection probabilities (must sum to 1.0 for the phase).
+
+            - Early phases should focus on exploration (e.g., higher crossover and move mutations).
+            - Later phases should focus on exploitation/refinement (e.g., higher swap mutations and simulated annealing).
+
+            Provide the response as a JSON array of phase objects.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            generations: { type: Type.INTEGER },
+                            heuristics: {
+                                type: Type.OBJECT,
+                                properties: {
+                                    SWAP_MUTATE: { type: Type.NUMBER },
+                                    MOVE_MUTATE: { type: Type.NUMBER },
+                                    SIMULATED_ANNEALING: { type: Type.NUMBER },
+                                    DAY_WISE_CROSSOVER: { type: Type.NUMBER },
+                                },
+                                required: ["SWAP_MUTATE", "MOVE_MUTATE", "SIMULATED_ANNEALING", "DAY_WISE_CROSSOVER"]
+                            }
+                        },
+                        required: ["generations", "heuristics"]
+                    }
+                },
+            },
+        });
+
+        const strategy = JSON.parse(response.text);
+        console.log('Gemini generated strategy:', strategy);
+        
+        if (Array.isArray(strategy) && strategy.length > 0 && strategy[0].generations) {
+            return strategy.map((phase: any) => ({
+                generations: phase.generations,
+                heuristicEnumMap: new Map([
+                    [LowLevelHeuristic.SWAP_MUTATE, phase.heuristics.SWAP_MUTATE],
+                    [LowLevelHeuristic.MOVE_MUTATE, phase.heuristics.MOVE_MUTATE],
+                    [LowLevelHeuristic.SIMULATED_ANNEALING, phase.heuristics.SIMULATED_ANNEALING],
+                    [LowLevelHeuristic.DAY_WISE_CROSSOVER, phase.heuristics.DAY_WISE_CROSSOVER],
+                ])
+            }));
+        }
+    } catch (error) {
+        console.error("Gemini strategy generation failed:", error);
+    }
+    
+    console.log("Falling back to default strategy.");
+    const defaultStrategy: Phase[] = [
+        { generations: 10, heuristicEnumMap: new Map([[LowLevelHeuristic.DAY_WISE_CROSSOVER, 0.5], [LowLevelHeuristic.MOVE_MUTATE, 0.4], [LowLevelHeuristic.SWAP_MUTATE, 0.1], [LowLevelHeuristic.SIMULATED_ANNEALING, 0.0]]) },
+        { generations: 10, heuristicEnumMap: new Map([[LowLevelHeuristic.DAY_WISE_CROSSOVER, 0.2], [LowLevelHeuristic.MOVE_MUTATE, 0.2], [LowLevelHeuristic.SWAP_MUTATE, 0.5], [LowLevelHeuristic.SIMULATED_ANNEALING, 0.1]]) },
+        { generations: 5, heuristicEnumMap: new Map([[LowLevelHeuristic.DAY_WISE_CROSSOVER, 0.0], [LowLevelHeuristic.MOVE_MUTATE, 0.1], [LowLevelHeuristic.SWAP_MUTATE, 0.4], [LowLevelHeuristic.SIMULATED_ANNEALING, 0.5]]) },
+    ];
+    return defaultStrategy;
+};
+
+
+/**
+ * [GEMINI] When the algorithm stagnates, this function asks Gemini for a creative swap to escape the local optimum.
+ */
+const geminiCreativeIntervention = async (
+    timetable: TimetableGrid,
+    allSubjects: Subject[],
+    allFaculty: Faculty[],
+    allRooms: Room[],
+    allBatches: Batch[],
+    days: string[]
+): Promise<[ClassAssignment, ClassAssignment] | null> => {
+    try {
+        const assignments = flattenTimetable(timetable);
+        const assignmentDetails = assignments.map(a => {
+            const subject = allSubjects.find(s => s.id === a.subjectId)?.code || '???';
+            const batch = allBatches.find(b => b.id === a.batchId)?.name || '???';
+            const day = days[a.day];
+            return `ID: ${a.id}, Class: ${subject} for ${batch} on ${day} at slot ${a.slot}`;
+        }).join('\n');
+
+        const prompt = `
+            You are an expert scheduler providing a creative intervention to a stuck genetic algorithm.
+            The algorithm is optimizing a university timetable but the fitness score has stagnated.
+            It needs a creative, non-obvious swap of two classes to escape the local optimum.
+
+            Here is a list of all class assignments in the current best timetable:
+            ${assignmentDetails}
+
+            Analyze the schedule and identify two classes to swap. A good swap might involve moving classes between different days or between batches that share some subjects, to break structural deadlocks.
+            Provide your response as a JSON object containing the IDs of the two classes to swap, with keys "classId1" and "classId2".
+        `;
+
+        const INTERVENTION_TIMEOUT_MS = 15000; // 15 seconds
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`Gemini intervention timed out after ${INTERVENTION_TIMEOUT_MS}ms`)), INTERVENTION_TIMEOUT_MS)
+        );
+
+        const geminiPromise = ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        classId1: { type: Type.STRING },
+                        classId2: { type: Type.STRING },
+                    },
+                    required: ["classId1", "classId2"],
+                },
+            },
+        });
+
+        const response = await Promise.race([geminiPromise, timeoutPromise]) as GenerateContentResponse;
+        
+        const { classId1, classId2 } = JSON.parse(response.text);
+
+        const assignment1 = assignments.find(a => a.id === classId1);
+        const assignment2 = assignments.find(a => a.id === classId2);
+
+        if (assignment1 && assignment2) {
+            console.log(`Gemini intervention: Swapping ${assignment1.id} and ${assignment2.id}`);
+            return [assignment1, assignment2];
+        }
+
+        console.warn("Gemini intervention failed: could not find suggested classes.", { classId1, classId2 });
+        return null;
+
+    } catch (error) {
+        console.error("Gemini creative intervention failed (or timed out):", error);
+        return null;
+    }
+};
+
+/**
+ * [NEW] Helper for NLC to find an assignment based on subject code and batch name.
+ */
+const findAssignmentByDetails = (timetable: TimetableGrid, subjectCode: string, batchName: string, allSubjects: Subject[], allBatches: Batch[]): ClassAssignment | null => {
+    const subject = allSubjects.find(s => s.code.toLowerCase() === subjectCode.toLowerCase());
+    const batch = allBatches.find(b => b.name.toLowerCase() === batchName.toLowerCase());
+    if (!subject || !batch) return null;
+
+    const batchGrid = timetable[batch.id];
+    if (!batchGrid) return null;
+
+    // Find the first occurrence of this class for the batch
+    for (const day in batchGrid) {
+        for (const slot in batchGrid[day]) {
+            const assignment = batchGrid[day][slot];
+            if (assignment.subjectId === subject.id) {
+                return assignment;
+            }
+        }
+    }
+    return null;
+};
+
+/**
+ * [NEW & GEMINI] Applies a natural language command to modify a timetable.
+ */
+export const applyNaturalLanguageCommand = async (
+    timetable: TimetableGrid,
+    command: string,
+    allSubjects: Subject[],
+    allFaculty: Faculty[],
+    allBatches: Batch[],
+    days: string[],
+    settings: TimetableSettings
+): Promise<TimetableGrid> => {
+    const timeSlots = generateTimeSlots(settings);
+    const assignments = flattenTimetable(timetable);
+
+    const assignmentDetails = assignments.map(a => {
+        const subject = allSubjects.find(s => s.id === a.subjectId)?.code || '???';
+        const batch = allBatches.find(b => b.id === a.batchId)?.name || '???';
+        const day = days[a.day];
+        const time = timeSlots[a.slot] || `Slot ${a.slot}`;
+        return `Class: ${subject} for ${batch} is on ${day} at ${time}`;
+    }).join('\n');
+
+    const prompt = `
+        You are an intelligent assistant modifying a university timetable.
+        Based on the user's command, you must determine the action ("swap" or "move") and the parameters.
+
+        Available Days: ${days.join(', ')}
+        Available Time Slots: ${timeSlots.map((ts, i) => `Slot ${i}: ${ts}`).join('; ')}
+
+        Current Timetable Assignments:
+        ${assignmentDetails}
+
+        User Command: "${command}"
+
+        Parse the user's command and identify the action.
+        - If the action is "swap", identify the two classes to be swapped.
+        - If the action is "move", identify the class to be moved and the target day and slot index.
+        - A class is identified by its subject code and batch name.
+        
+        Return a JSON object describing the action.
+        For "swap", use schema: { "action": "swap", "class1_subject_code": string, "class1_batch_name": string, "class2_subject_code": string, "class2_batch_name": string }
+        For "move", use schema: { "action": "move", "class_subject_code": string, "class_batch_name": string, "target_day": string, "target_slot_index": integer }
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                responseMimeType: "application/json",
+            },
+        });
+
+        const parsed = JSON.parse(response.text);
+        const newTimetable = JSON.parse(JSON.stringify(timetable));
+
+        if (parsed.action === 'swap') {
+            const assignment1 = findAssignmentByDetails(timetable, parsed.class1_subject_code, parsed.class1_batch_name, allSubjects, allBatches);
+            const assignment2 = findAssignmentByDetails(timetable, parsed.class2_subject_code, parsed.class2_batch_name, allSubjects, allBatches);
+
+            if (!assignment1 || !assignment2) {
+                throw new Error("AI could not identify one or both of the classes to swap.");
+            }
+            
+            // Perform the swap
+            const batchGrid1 = newTimetable[assignment1.batchId];
+            const batchGrid2 = newTimetable[assignment2.batchId];
+            batchGrid1[assignment1.day][assignment1.slot] = { ...assignment2, day: assignment1.day, slot: assignment1.slot };
+            batchGrid2[assignment2.day][assignment2.slot] = { ...assignment1, day: assignment2.day, slot: assignment2.slot };
+
+        } else if (parsed.action === 'move') {
+            const assignment = findAssignmentByDetails(timetable, parsed.class_subject_code, parsed.class_batch_name, allSubjects, allBatches);
+            if (!assignment) {
+                throw new Error("AI could not identify the class to move.");
+            }
+            const targetDayIndex = days.findIndex(d => d.toLowerCase() === parsed.target_day.toLowerCase());
+            const targetSlotIndex = parsed.target_slot_index;
+
+            if (targetDayIndex === -1 || targetSlotIndex < 0 || targetSlotIndex >= timeSlots.length) {
+                throw new Error("AI identified an invalid target day or slot.");
+            }
+            
+            // Check if target slot is free for the batch
+            if (newTimetable[assignment.batchId]?.[targetDayIndex]?.[targetSlotIndex]) {
+                 throw new Error(`Cannot move class. The target slot (${days[targetDayIndex]}, ${timeSlots[targetSlotIndex]}) is already occupied for this batch.`);
+            }
+
+            // Remove from old position
+            delete newTimetable[assignment.batchId][assignment.day][assignment.slot];
+            
+            // Place in new position
+            if (!newTimetable[assignment.batchId][targetDayIndex]) {
+                newTimetable[assignment.batchId][targetDayIndex] = {};
+            }
+            newTimetable[assignment.batchId][targetDayIndex][targetSlotIndex] = {
+                ...assignment,
+                day: targetDayIndex,
+                slot: targetSlotIndex,
+            };
+        } else {
+             throw new Error("AI returned an unknown action.");
+        }
+
+        return newTimetable;
+
+    } catch (error) {
+        console.error("Gemini NLC failed:", error);
+        throw new Error(`The AI assistant could not perform the request: ${error instanceof Error ? error.message : String(error)}`);
+    }
+};
+
+
+// --- GENETIC ALGORITHM CORE ---
+
+/**
+ * The main entry point for the optimization process.
+ */
+export const runOptimization = async (input: SchedulerInput): Promise<{ timetable: TimetableGrid, metrics: TimetableMetrics }[]> => {
+    // FIX: Destructure baseTimetable from the input object.
+    const { batches, allSubjects, allFaculty, allRooms, constraints, globalConstraints, days, timetableSettings, candidateCount, facultyAllocations, baseTimetable } = input;
+    const timeSlots = generateTimeSlots(timetableSettings);
+    const numSlots = timeSlots.length;
+
+    const classesToSchedule = batches.flatMap(batch =>
+        batch.subjectIds.flatMap(subjectId => {
+            const subject = allSubjects.find(s => s.id === subjectId);
+            if (!subject) return [];
+            // For labs, one session is one hour. A 2-hour lab needs two class assignments.
+            return Array(subject.hoursPerWeek).fill(null).map(() => ({ batchId: batch.id, subjectId }));
+        })
+    );
+    
+    const problemSummary = {
+        numBatches: batches.length, numClasses: classesToSchedule.length, numFaculty: allFaculty.length,
+        numRooms: allRooms.length, numConstraints: constraints.pinnedAssignments.length,
+    };
+    const strategy = await getGeminiPhaseStrategy(problemSummary);
+    // FIX: Pass baseTimetable to the population initialization function.
+    let population = initializePopulation(POPULATION_SIZE, classesToSchedule, batches, allSubjects, allFaculty, allRooms, constraints, facultyAllocations, days, numSlots, baseTimetable);
+    let bestScores: number[] = [];
+
+    for (const phase of strategy) {
+        let interventionUsedThisPhase = false;
+        for (let gen = 0; gen < phase.generations; gen++) {
+            population = population.map(individual => ({
+                ...individual,
+                metrics: calculateMetrics(individual.timetable, batches, allFaculty, globalConstraints),
+            }));
+
+            population.sort((a, b) => b.metrics.score - a.metrics.score);
+            const bestScore = population[0].metrics.score;
+            bestScores.push(bestScore);
+            console.log(`Generation ${gen + 1}/${MAX_GENERATIONS}, Best Score: ${bestScore.toFixed(2)}`);
+
+            if (bestScore >= PERFECT_SCORE_THRESHOLD) {
+                 console.log("Near-perfect solution found, stopping early.");
+                 break;
+            }
+
+            const stagnationCounter = bestScores.slice(-STAGNATION_LIMIT_FOR_EXIT).filter(s => s === bestScore).length;
+            if (stagnationCounter >= STAGNATION_LIMIT_FOR_EXIT) {
+                 console.log("Stagnation detected, stopping early.");
+                 break;
+            }
+            
+            // --- GEMINI INTERVENTION ---
+            const interventionStagnation = bestScores.slice(-STAGNATION_LIMIT_FOR_INTERVENTION).filter(s => s === bestScore).length;
+            if (interventionStagnation >= STAGNATION_LIMIT_FOR_INTERVENTION && gen > STAGNATION_LIMIT_FOR_INTERVENTION && !interventionUsedThisPhase) {
+                console.log("Stagnation detected, attempting Gemini creative intervention...");
+                interventionUsedThisPhase = true; // Attempt intervention only once per phase
+                const intervention = await geminiCreativeIntervention(population[0].timetable, allSubjects, allFaculty, allRooms, batches, days);
+                if (intervention) {
+                    const [assignment1, assignment2] = intervention;
+                    const newTimetable = JSON.parse(JSON.stringify(population[0].timetable));
+                    const batchGrid1 = newTimetable[assignment1.batchId];
+                    const batchGrid2 = newTimetable[assignment2.batchId];
+                    
+                    if (batchGrid1 && batchGrid2) {
+                        batchGrid1[assignment1.day][assignment1.slot] = { ...assignment2, day: assignment1.day, slot: assignment1.slot };
+                        batchGrid2[assignment2.day][assignment2.slot] = { ...assignment1, day: assignment2.day, slot: assignment2.slot };
+                        
+                        // Replace the worst individual with the Gemini-modified best
+                        population[population.length - 1] = { timetable: newTimetable, metrics: calculateMetrics(newTimetable, batches, allFaculty, globalConstraints) };
+                        bestScores[bestScores.length - 1] = -1; // Reset stagnation counter
+                    }
+                }
+            }
+
+
+            let newPopulation: typeof population = [];
+            for (let i = 0; i < ELITISM_COUNT; i++) {
+                newPopulation.push(population[i]);
+            }
+
+            while (newPopulation.length < POPULATION_SIZE) {
+                let offspring = { ...selectParent(population, TOURNAMENT_SIZE) };
+                
+                const heuristic = selectHeuristic(phase.heuristicEnumMap);
+                
+                switch (heuristic) {
+                    case LowLevelHeuristic.DAY_WISE_CROSSOVER:
+                         const parent2 = selectParent(population, TOURNAMENT_SIZE);
+                         offspring = dayWiseCrossover(offspring, parent2);
+                         break;
+                    case LowLevelHeuristic.SWAP_MUTATE:
+                         offspring = swapMutate(offspring, 0.1);
+                         break;
+                    case LowLevelHeuristic.MOVE_MUTATE:
+                         offspring = moveMutate(offspring, 0.1, batches, allSubjects, allFaculty, allRooms, constraints, days, numSlots);
+                         break;
+                    case LowLevelHeuristic.SIMULATED_ANNEALING:
+                         offspring = simulatedAnnealing(offspring, batches, allFaculty, globalConstraints);
+                         break;
+                }
+                
+                greedyRepair(offspring, batches, allSubjects, allFaculty, allRooms, constraints, days, numSlots, facultyAllocations);
+                newPopulation.push(offspring);
+            }
+            population = newPopulation;
+        }
+    }
+
+    // Final scoring and selection
+    population = population.map(individual => ({
+        ...individual,
+        metrics: calculateMetrics(individual.timetable, batches, allFaculty, globalConstraints),
+    }));
+    population.sort((a, b) => b.metrics.score - a.metrics.score);
+
+    // FIX: A logic error where the function returned the entire population,
+    // not just the top candidates requested by the user.
+    const distinctCandidates = [];
+    const seenSignatures = new Set<string>();
+    for (const ind of population) {
+        if (distinctCandidates.length >= candidateCount) break;
+        const signature = JSON.stringify(ind.timetable);
+        if (!seenSignatures.has(signature)) {
+            distinctCandidates.push(ind);
+            seenSignatures.add(signature);
+        }
+    }
+
+    return distinctCandidates;
+};
+
+// --- INITIALIZATION ---
+const initializePopulation = (
+    size: number,
+    classes: { batchId: string, subjectId: string }[],
+    batches: Batch[],
+    allSubjects: Subject[],
+    allFaculty: Faculty[],
+    allRooms: Room[],
+    constraints: Constraints,
+    facultyAllocations: FacultyAllocation[],
+    days: string[],
+    numSlots: number,
+    // FIX: Accept optional baseTimetable.
+    baseTimetable?: TimetableGrid
+): { timetable: TimetableGrid, metrics: TimetableMetrics }[] => {
+    let population = [];
+    for (let i = 0; i < size; i++) {
+        // FIX: If this is the first individual and a baseTimetable is provided, use it.
+        if (i === 0 && baseTimetable) {
+            population.push({ timetable: baseTimetable, metrics: { score: 0, hardConflicts: 0, studentGaps: 0, facultyGaps: 0, facultyWorkloadDistribution: 0, preferenceViolations: 0 } });
+            continue;
+        }
+
+        let timetable: TimetableGrid = {};
+        batches.forEach(b => {
+            timetable[b.id] = {};
+            for (let d = 0; d < days.length; d++) {
+                timetable[b.id][d] = {};
+            }
+        });
+
+        // Apply pinned assignments first
+        constraints.pinnedAssignments.forEach(pin => {
+            if (!timetable[pin.batchId]) timetable[pin.batchId] = {};
+            pin.days.forEach(day => {
+                if (!timetable[pin.batchId][day]) timetable[pin.batchId][day] = {};
+                pin.startSlots.forEach(startSlot => {
+                    for (let j = 0; j < pin.duration; j++) {
+                        const slot = startSlot + j;
+                        if (slot < numSlots) {
+                            timetable[pin.batchId][day][slot] = {
+                                id: generateId(),
+                                subjectId: pin.subjectId,
+                                // UPGRADE: Now an array to support multi-teacher classes
+                                facultyIds: [pin.facultyId],
+                                roomId: pin.roomId,
+                                batchId: pin.batchId,
+                                day, slot,
+                            };
+                        }
+                    }
+                });
+            });
+        });
+
+        const unplacedClasses = [...classes];
+        let attempts = 0;
+        const maxAttempts = unplacedClasses.length * numSlots * days.length;
+
+        while (unplacedClasses.length > 0 && attempts < maxAttempts) {
+            attempts++;
+            const classToPlace = unplacedClasses.shift()!;
+            const batch = batches.find(b => b.id === classToPlace.batchId)!;
+            const subject = allSubjects.find(s => s.id === classToPlace.subjectId)!;
+
+            const day = Math.floor(Math.random() * days.length);
+            const slot = Math.floor(Math.random() * numSlots);
+            
+            // Try to find a valid placement
+            if (!isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) {
+                unplacedClasses.push(classToPlace); continue;
+            }
+            
+            // UPGRADE: Find multiple faculty for labs/practicals
+            const facultyCandidates = findFacultyForClass(batch.id, subject.id, allFaculty, facultyAllocations);
+            if (facultyCandidates.length === 0) {
+                 unplacedClasses.push(classToPlace); continue;
+            }
+            
+            const requiredFacultyCount = subject.type === 'Practical' ? 2 : 1;
+            const selectedFaculty = [];
+            for (const fac of facultyCandidates) {
+                if (isFacultyAvailable(fac.id, day, slot, flattenTimetable(timetable), constraints.facultyAvailability)) {
+                    selectedFaculty.push(fac);
+                    if (selectedFaculty.length >= requiredFacultyCount) break;
+                }
+            }
+
+            if (selectedFaculty.length < requiredFacultyCount) {
+                 unplacedClasses.push(classToPlace); continue;
+            }
+
+            const room = findRoomForClass(batch, subject, day, slot, allRooms, flattenTimetable(timetable));
+            if (!room) {
+                 unplacedClasses.push(classToPlace); continue;
+            }
+
+            if (!timetable[batch.id][day]) timetable[batch.id][day] = {};
+            timetable[batch.id][day][slot] = {
+                id: generateId(),
+                subjectId: subject.id,
+                facultyIds: selectedFaculty.map(f => f.id),
+                roomId: room.id,
+                batchId: batch.id,
+                day, slot
+            };
+        }
+
+        population.push({ timetable, metrics: { score: 0, hardConflicts: 0, studentGaps: 0, facultyGaps: 0, facultyWorkloadDistribution: 0, preferenceViolations: 0 } });
+    }
+    return population;
+};
+
+// --- GENETIC OPERATORS ---
+const selectParent = (population: { metrics: TimetableMetrics }[], tournamentSize: number) => {
+    let best = null;
+    for (let i = 0; i < tournamentSize; i++) {
+        const individual = population[Math.floor(Math.random() * population.length)];
+        if (best === null || individual.metrics.score > best.metrics.score) {
+            best = individual;
+        }
     }
     return best!;
 };
-const swapMutate = (chromosome: Chromosome, pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
-    const newTimetable = JSON.parse(JSON.stringify(chromosome.timetable));
-    const batchIds = Object.keys(newTimetable);
-    if (batchIds.length === 0) return chromosome;
-    const b1Id = batchIds[Math.floor(Math.random() * batchIds.length)];
-    const b2Id = batchIds[Math.floor(Math.random() * batchIds.length)];
-    const assignments1 = Object.values(newTimetable[b1Id]).flatMap(day => Object.values(day as object));
-    const assignments2 = Object.values(newTimetable[b2Id]).flatMap(day => Object.values(day as object));
-    if (assignments1.length < 1 || assignments2.length < 1) return chromosome;
-    const as1 = assignments1[Math.floor(Math.random() * assignments1.length)];
-    const as2 = assignments2[Math.floor(Math.random() * assignments2.length)];
-    newTimetable[as1.batchId][as1.day][as1.slot] = as2;
-    newTimetable[as2.batchId][as2.day][as2.slot] = as1;
-    [as1.day, as2.day] = [as2.day, as1.day];
-    [as1.slot, as2.slot] = [as2.slot, as1.slot];
-    return { timetable: newTimetable, metrics: calculateMetrics(newTimetable, input.batches, input.allFaculty, input.globalConstraints) };
-};
-const moveMutate = (chromosome: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
-    const newTimetable = JSON.parse(JSON.stringify(chromosome.timetable));
-    const batchIds = Object.keys(newTimetable);
-    if (batchIds.length === 0) return chromosome;
-    const randomBatchId = batchIds[Math.floor(Math.random() * batchIds.length)];
-    const assignments = Object.values(newTimetable[randomBatchId]).flatMap(day => Object.values(day as object));
-    if (assignments.length === 0) return chromosome;
-    const assignmentToMove = assignments[Math.floor(Math.random() * assignments.length)];
-    const potentialSlots = input.days
-        .flatMap((_, dayIndex) => slots.map((_, slotIndex) => ({ day: dayIndex, slot: slotIndex })))
-        .filter(({ day, slot }) => !newTimetable[randomBatchId][day] || !newTimetable[randomBatchId][day][slot]);
-    if (potentialSlots.length === 0) return chromosome;
-    const { day: newDay, slot: newSlot } = potentialSlots[Math.floor(Math.random() * potentialSlots.length)];
-    delete newTimetable[assignmentToMove.batchId][assignmentToMove.day][assignmentToMove.slot];
-    if (!newTimetable[assignmentToMove.batchId][newDay]) newTimetable[assignmentToMove.batchId][newDay] = {};
-    newTimetable[assignmentToMove.batchId][newDay][newSlot] = { ...assignmentToMove, day: newDay, slot: newSlot };
-    return { timetable: newTimetable, metrics: calculateMetrics(newTimetable, input.batches, input.allFaculty, input.globalConstraints) };
-};
-const dayWiseCrossover = (p1: Chromosome, p2: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>, reqs: ClassRequirement[]): Chromosome => {
-    const childTimetable: TimetableGrid = {};
-    const crossoverPoint = Math.floor(Math.random() * input.days.length);
 
-    for (const batch of input.batches) {
-        childTimetable[batch.id] = {};
-        for (let day = 0; day < input.days.length; day++) {
-            const parentSource = day < crossoverPoint ? p1.timetable : p2.timetable;
-            if (parentSource[batch.id] && parentSource[batch.id][day]) {
-                childTimetable[batch.id][day] = JSON.parse(JSON.stringify(parentSource[batch.id][day]));
+const dayWiseCrossover = (parent1: { timetable: TimetableGrid }, parent2: { timetable: TimetableGrid }) => {
+    const child: TimetableGrid = {};
+    const batchIds = Object.keys(parent1.timetable);
+    const crossoverDay = Math.floor(Math.random() * 6);
+
+    for (const batchId of batchIds) {
+        child[batchId] = {};
+        for (let day = 0; day < 6; day++) {
+            if (day < crossoverDay) {
+                child[batchId][day] = { ...(parent1.timetable[batchId]?.[day] || {}) };
+            } else {
+                child[batchId][day] = { ...(parent2.timetable[batchId]?.[day] || {}) };
             }
         }
     }
-    const childChromosome = { timetable: childTimetable, metrics: calculateMetrics(childTimetable, input.batches, input.allFaculty, input.globalConstraints) };
-    // FIX: A repair function is now called to ensure the new child is valid.
-    return greedyRepair(childChromosome, reqs, slots, pinnedClassAssignments, input);
+    return { timetable: child, metrics: { score: 0, hardConflicts: 1, studentGaps: 0, facultyGaps: 0, facultyWorkloadDistribution: 0, preferenceViolations: 0 }};
 };
-const simulatedAnnealingOperator = (chromosome: Chromosome, slots: string[], pinnedClassAssignments: ClassAssignment[], input: Omit<SchedulerInput, 'candidateCount'>): Chromosome => {
-    let currentSolution = JSON.parse(JSON.stringify(chromosome));
+
+
+const swapMutate = (individual: { timetable: TimetableGrid }, mutationRate: number) => {
+    if (Math.random() > mutationRate) return individual;
+    const timetable = JSON.parse(JSON.stringify(individual.timetable));
+    const assignments = flattenTimetable(timetable);
+    if (assignments.length < 2) return individual;
+    
+    const [as1, as2] = [assignments[Math.floor(Math.random() * assignments.length)], assignments[Math.floor(Math.random() * assignments.length)]];
+
+    // Swap positions
+    const tempDay = as1.day, tempSlot = as1.slot;
+    as1.day = as2.day; as1.slot = as2.slot;
+    as2.day = tempDay; as2.slot = tempSlot;
+
+    // Update grid
+    const batchGrid1 = timetable[as1.batchId];
+    const batchGrid2 = timetable[as2.batchId];
+    if (batchGrid1 && batchGrid2) {
+        delete batchGrid2[as2.day][as2.slot];
+        delete batchGrid1[as1.day][as1.slot];
+        batchGrid1[as2.day][as2.slot] = as2;
+        batchGrid2[as1.day][as1.slot] = as1;
+    }
+    
+    return { ...individual, timetable };
+};
+
+const moveMutate = (
+    individual: { timetable: TimetableGrid }, 
+    mutationRate: number, 
+    batches: Batch[], 
+    allSubjects: Subject[],
+    allFaculty: Faculty[],
+    allRooms: Room[],
+    constraints: Constraints,
+    days: string[],
+    numSlots: number
+) => {
+    if (Math.random() > mutationRate) return individual;
+    const timetable = JSON.parse(JSON.stringify(individual.timetable));
+    const assignments = flattenTimetable(timetable);
+    if (assignments.length === 0) return individual;
+
+    const assignmentToMove = assignments[Math.floor(Math.random() * assignments.length)];
+    const batchGrid = timetable[assignmentToMove.batchId];
+    if (batchGrid?.[assignmentToMove.day]?.[assignmentToMove.slot]) {
+        delete batchGrid[assignmentToMove.day][assignmentToMove.slot];
+    }
+    
+    const batch = batches.find(b => b.id === assignmentToMove.batchId)!;
+    const subject = allSubjects.find(s => s.id === assignmentToMove.subjectId)!;
+
+    // Try to find a new valid spot
+    for (let i=0; i < 50; i++) {
+        const day = Math.floor(Math.random() * days.length);
+        const slot = Math.floor(Math.random() * numSlots);
+        if (isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) {
+            const facultyAreAvailable = assignmentToMove.facultyIds.every(fid => isFacultyAvailable(fid, day, slot, flattenTimetable(timetable), constraints.facultyAvailability));
+            const room = findRoomForClass(batch, subject, day, slot, allRooms, flattenTimetable(timetable));
+            if (facultyAreAvailable && room) {
+                assignmentToMove.day = day;
+                assignmentToMove.slot = slot;
+                assignmentToMove.roomId = room.id;
+                batchGrid[day][slot] = assignmentToMove;
+                return { ...individual, timetable };
+            }
+        }
+    }
+    
+    // If failed, put it back
+    batchGrid[assignmentToMove.day][assignmentToMove.slot] = assignmentToMove;
+    return individual;
+};
+
+
+const simulatedAnnealing = (
+    individual: { timetable: TimetableGrid, metrics: TimetableMetrics },
+    batches: Batch[],
+    allFaculty: Faculty[],
+    globalConstraints: GlobalConstraints
+) => {
+    let currentTimetable = JSON.parse(JSON.stringify(individual.timetable));
+    let currentMetrics = calculateMetrics(currentTimetable, batches, allFaculty, globalConstraints);
     let temperature = SA_INITIAL_TEMPERATURE;
+
     while (temperature > SA_MIN_TEMPERATURE) {
         for (let i = 0; i < SA_ITERATIONS_PER_TEMP; i++) {
-            const neighbor = swapMutate(currentSolution, pinnedClassAssignments, input);
-            const currentEnergy = currentSolution.metrics.score;
-            const neighborEnergy = neighbor.metrics.score;
-            if (neighborEnergy > currentEnergy || Math.random() < Math.exp((neighborEnergy - currentEnergy) / temperature)) {
-                currentSolution = neighbor;
+            const newTimetable = JSON.parse(JSON.stringify(currentTimetable));
+            const assignments = flattenTimetable(newTimetable);
+            if (assignments.length < 2) continue;
+            
+            const [as1, as2] = [assignments[Math.floor(Math.random() * assignments.length)], assignments[Math.floor(Math.random() * assignments.length)]];
+
+            // Swap positions
+            const tempDay = as1.day, tempSlot = as1.slot;
+            as1.day = as2.day; as1.slot = as2.slot;
+            as2.day = tempDay; as2.slot = tempSlot;
+
+            // Update grid
+            const batchGrid1 = newTimetable[as1.batchId];
+            const batchGrid2 = newTimetable[as2.batchId];
+             if (batchGrid1 && batchGrid2) {
+                delete batchGrid2[as2.day][as2.slot];
+                delete batchGrid1[as1.day][as1.slot];
+                batchGrid1[as2.day][as2.slot] = as2;
+                batchGrid2[as1.day][as1.slot] = as1;
+            }
+
+            const newMetrics = calculateMetrics(newTimetable, batches, allFaculty, globalConstraints);
+            
+            const delta = newMetrics.score - currentMetrics.score;
+
+            if (delta > 0 || Math.exp(delta / temperature) > Math.random()) {
+                currentTimetable = newTimetable;
+                currentMetrics = newMetrics;
             }
         }
         temperature *= SA_COOLING_RATE;
     }
-    return currentSolution;
+
+    return { timetable: currentTimetable, metrics: currentMetrics };
 };
-const selectHeuristic = (phaseProbabilities: Record<string, number>): LowLevelHeuristic => {
+
+const selectHeuristic = (heuristicMap: Map<LowLevelHeuristic, number>): LowLevelHeuristic => {
     const rand = Math.random();
     let cumulative = 0;
-    const heuristics = Object.keys(phaseProbabilities) as (keyof typeof LowLevelHeuristic)[];
-    for (const heuristic of heuristics) {
-        const key = heuristic as unknown as LowLevelHeuristic;
-        cumulative += phaseProbabilities[key];
-        if (rand <= cumulative) { return key; }
+    for (const [heuristic, probability] of heuristicMap.entries()) {
+        cumulative += probability;
+        if (rand <= cumulative) {
+            return heuristic;
+        }
     }
-    return heuristics[0] as unknown as LowLevelHeuristic;
+    return LowLevelHeuristic.SWAP_MUTATE; // Fallback
 };
 
-// --- Main optimization function ---
-export const runOptimization = async (input: SchedulerInput): Promise<{ timetable: TimetableGrid, metrics: TimetableMetrics }[]> => {
-    const { candidateCount, batches, allSubjects, timetableSettings, constraints } = input;
-    const timeSlots = generateTimeSlots(timetableSettings);
+// --- HELPERS ---
+const greedyRepair = (
+    individual: { timetable: TimetableGrid },
+    batches: Batch[],
+    allSubjects: Subject[],
+    allFaculty: Faculty[],
+    allRooms: Room[],
+    constraints: Constraints,
+    days: string[],
+    numSlots: number,
+    facultyAllocations: FacultyAllocation[]
+) => {
+    const timetable = individual.timetable;
+    const allCurrentAssignments = flattenTimetable(timetable);
+
+    // Identify conflicts and unplaced classes
+    const conflicts: ClassAssignment[] = [];
+    const classCounts: Record<string, number> = {};
+
+    allCurrentAssignments.forEach(a => {
+        const key = `${a.batchId}-${a.subjectId}`;
+        classCounts[key] = (classCounts[key] || 0) + 1;
+        
+        const facultyAreAvailable = a.facultyIds.every(fid => isFacultyAvailable(fid, a.day, a.slot, allCurrentAssignments.filter(ca => ca.id !== a.id), constraints.facultyAvailability));
+        if (!facultyAreAvailable) conflicts.push(a);
+    });
     
-    const pinnedClassAssignments: ClassAssignment[] = constraints.pinnedAssignments.flatMap(pin => 
-        pin.days.flatMap(day => 
-            pin.startSlots.map(startSlot => ({
-                id: `pin_${pin.id}_${day}_${startSlot}`, ...pin, day, slot: startSlot, facultyIds: [pin.facultyId]
-            }))
-        )
-    );
-
-    const requiredClasses = getRequiredClasses(batches, allSubjects, constraints.pinnedAssignments);
-    console.log("Consulting Gemini AI for a high-level optimization strategy...");
-    const aiStrategy = await getGeminiPhaseStrategy(input);
-    console.log("Initializing population...");
-    let population: Chromosome[] = Array.from({ length: POPULATION_SIZE }, () => createChromosome(requiredClasses, timeSlots, pinnedClassAssignments, input));
-
-    let bestScoreSoFar = -Infinity;
-    let stagnationCounter = 0;
-    let geminiInterventionUsed = false;
-
-    for (let gen = 0; gen < MAX_GENERATIONS; gen++) {
-        const newPopulation: Chromosome[] = [];
-        population.sort((a, b) => b.metrics.score - a.metrics.score);
-        for(let i=0; i<ELITISM_COUNT; i++) { newPopulation.push(population[i]); }
-        const currentPhase = aiStrategy.phases[gen < MAX_GENERATIONS * aiStrategy.phases[0].duration ? 0 : 1];
-        while(newPopulation.length < POPULATION_SIZE) {
-            const p1 = tournamentSelection(population);
-            const p2 = tournamentSelection(population);
-            const heuristic = selectHeuristic(currentPhase.operatorProbabilities);
-            let child: Chromosome;
-            switch(heuristic) {
-                case LowLevelHeuristic.DAY_WISE_CROSSOVER: child = dayWiseCrossover(p1, p2, timeSlots, pinnedClassAssignments, input, requiredClasses); break;
-                case LowLevelHeuristic.SWAP_MUTATE: child = swapMutate(p1, pinnedClassAssignments, input); break;
-                case LowLevelHeuristic.MOVE_MUTATE: child = moveMutate(p1, timeSlots, pinnedClassAssignments, input); break;
-                case LowLevelHeuristic.SIMULATED_ANNEALING: child = simulatedAnnealingOperator(p1, timeSlots, pinnedClassAssignments, input); break;
-                default: child = p1;
+    // Identify missing classes
+    const requiredClasses = batches.flatMap(b => b.subjectIds.map(sId => ({ batchId: b.id, subjectId: sId, hours: allSubjects.find(s=>s.id === sId)?.hoursPerWeek || 0 })));
+    requiredClasses.forEach(rc => {
+        const key = `${rc.batchId}-${rc.subjectId}`;
+        const placedCount = classCounts[key] || 0;
+        if (placedCount < rc.hours) {
+            for (let i = 0; i < rc.hours - placedCount; i++) {
+                conflicts.push({
+                    id: `unplaced_${generateId()}`, subjectId: rc.subjectId, batchId: rc.batchId,
+                    // Dummy values, will be replaced
+                    facultyIds: [], roomId: '', day: -1, slot: -1
+                });
             }
-            newPopulation.push(child);
         }
-        population = newPopulation;
-        const bestOfGen = population[0];
-        if (bestOfGen.metrics.score > bestScoreSoFar) {
-            bestScoreSoFar = bestOfGen.metrics.score;
-            stagnationCounter = 0;
-        } else {
-            stagnationCounter++;
+    });
+
+    // Attempt to repair
+    for (const conflict of conflicts) {
+        // Remove from current position if it exists
+        if (conflict.day !== -1 && timetable[conflict.batchId]?.[conflict.day]?.[conflict.slot]) {
+            delete timetable[conflict.batchId][conflict.day][conflict.slot];
         }
-        console.log(`Gen ${gen}: Best Score=${Math.round(bestScoreSoFar)} | Stagnation=${stagnationCounter}`);
-        if (bestScoreSoFar > PERFECT_SCORE_THRESHOLD) { console.log("Near-perfect solution found. Exiting early."); break; }
-        if (stagnationCounter >= STAGNATION_LIMIT_FOR_EXIT) { console.log("Stagnation limit reached. Exiting evolution."); break; }
-        if (stagnationCounter >= STAGNATION_LIMIT_FOR_INTERVENTION && !geminiInterventionUsed) {
-            console.log("Stuck in local optimum. Requesting Gemini intervention...");
-            const intervenedChromosome = await geminiCreativeIntervention(bestOfGen, input);
-            population[population.length-1] = intervenedChromosome;
-            geminiInterventionUsed = true;
-            stagnationCounter = 0;
+
+        const batch = batches.find(b => b.id === conflict.batchId)!;
+        const subject = allSubjects.find(s => s.id === conflict.subjectId)!;
+
+        // Find a new valid spot
+        let placed = false;
+        for (let i = 0; i < 100; i++) { // Limit attempts
+            const day = Math.floor(Math.random() * days.length);
+            const slot = Math.floor(Math.random() * numSlots);
+            
+            if (!isBatchAvailable(batch.id, day, slot, flattenTimetable(timetable))) continue;
+            
+            const facultyCandidates = findFacultyForClass(batch.id, subject.id, allFaculty, facultyAllocations);
+            const requiredFacultyCount = subject.type === 'Practical' ? 2 : 1;
+            const selectedFaculty = [];
+             for (const fac of facultyCandidates) {
+                if (isFacultyAvailable(fac.id, day, slot, flattenTimetable(timetable), constraints.facultyAvailability)) {
+                    selectedFaculty.push(fac);
+                    if (selectedFaculty.length >= requiredFacultyCount) break;
+                }
+            }
+            if(selectedFaculty.length < requiredFacultyCount) continue;
+            
+            const room = findRoomForClass(batch, subject, day, slot, allRooms, flattenTimetable(timetable));
+            if (room) {
+                 if (!timetable[batch.id][day]) timetable[batch.id][day] = {};
+                 timetable[batch.id][day][slot] = {
+                    ...conflict,
+                    facultyIds: selectedFaculty.map(f => f.id),
+                    roomId: room.id,
+                    day, slot
+                 };
+                 placed = true;
+                 break;
+            }
         }
     }
+};
 
-    population.sort((a, b) => b.metrics.score - a.metrics.score);
-    console.log("AI-driven optimization finished.");
-    return population.slice(0, candidateCount).map(c => ({ timetable: c.timetable, metrics: c.metrics }));
+const findFacultyForClass = (
+    batchId: string,
+    subjectId: string,
+    allFaculty: Faculty[],
+    allocations: FacultyAllocation[],
+): Faculty[] => {
+    // 1. Check for a specific allocation for this batch and subject.
+    const specificAllocation = allocations.find(a => a.batchId === batchId && a.subjectId === subjectId);
+    if (specificAllocation && specificAllocation.facultyIds.length > 0) {
+        return allFaculty.filter(f => specificAllocation.facultyIds.includes(f.id));
+    }
+    // 2. Fallback: Find any faculty who can teach this subject.
+    return allFaculty.filter(f => f.subjectIds.includes(subjectId));
+};
+
+
+const findRoomForClass = (
+    batch: Batch,
+    subject: Subject,
+    day: number,
+    slot: number,
+    allRooms: Room[],
+    allAssignments: ClassAssignment[]
+): Room | null => {
+    const suitableRooms = allRooms.filter(room => {
+        if (batch.allocatedRoomIds && batch.allocatedRoomIds.length > 0 && !batch.allocatedRoomIds.includes(room.id)) {
+            return false; // Batch is restricted to specific rooms
+        }
+        return isRoomAvailable(room.id, day, slot, batch, subject, room, allAssignments);
+    });
+    return suitableRooms.length > 0 ? suitableRooms[Math.floor(Math.random() * suitableRooms.length)] : null;
 };

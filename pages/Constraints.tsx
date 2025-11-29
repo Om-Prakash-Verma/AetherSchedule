@@ -1,49 +1,46 @@
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
 import { useToast } from '../hooks/useToast';
 import * as api from '../services';
 import { GlassButton } from '../components/GlassButton';
-import { PlusCircle } from 'lucide-react';
+import { PlusCircle, Bot, Wand2 } from 'lucide-react';
 import { GlassSelect } from '../components/ui/GlassSelect';
 import { AvailabilityMatrix } from '../components/AvailabilityMatrix';
 import { DataTable } from '../components/DataTable';
 import { DataFormModal } from '../components/DataFormModal';
 import type { FacultyAvailability, PinnedAssignment, PlannedLeave } from '../types';
 import { DAYS_OF_WEEK } from '../constants';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useConfirm } from '../hooks/useConfirm';
 
-type ConstraintType = 'availability' | 'pinned' | 'leaves';
+type ConstraintType = 'availability' | 'pinned' | 'leaves' | 'presets';
 
 const TABS: { id: ConstraintType, label: string }[] = [
     { id: 'availability', label: 'Faculty Availability' },
     { id: 'pinned', label: 'Pinned Assignments' },
     { id: 'leaves', label: 'Planned Leaves' },
+    { id: 'presets', label: 'AI Constraint Builder' },
 ];
 
 
 const Constraints: React.FC = () => {
-    const { 
-        constraints, faculty, refreshData, subjects, batches, timeSlots,
-        fetchConstraints, fetchFaculty, fetchSubjects, fetchBatches, loadingStates
-    } = useAppContext();
+    const { timeSlots } = useAppContext();
     const [activeTab, setActiveTab] = useState<ConstraintType>('availability');
     const [selectedFacultyId, setSelectedFacultyId] = useState<string>('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState<any | null>(null);
     const toast = useToast();
+    const confirm = useConfirm();
+    const queryClient = useQueryClient();
+
+    const { data: constraints, isLoading: constraintsLoading } = useQuery({ queryKey: ['constraints'], queryFn: api.getConstraints, initialData: { pinnedAssignments: [], plannedLeaves: [], facultyAvailability: [], substitutions: [] } });
+    const { data: faculty = [] } = useQuery({ queryKey: ['faculty'], queryFn: api.getFaculty });
+    const { data: subjects = [] } = useQuery({ queryKey: ['subjects'], queryFn: api.getSubjects });
+    const { data: batches = [] } = useQuery({ queryKey: ['batches'], queryFn: api.getBatches });
 
     useEffect(() => {
-        fetchConstraints();
-        fetchFaculty();
-        // Fetch data needed for dropdowns in modals
-        if (activeTab === 'pinned') {
-            fetchSubjects();
-            fetchBatches();
-        }
-    }, [activeTab, fetchConstraints, fetchFaculty, fetchSubjects, fetchBatches]);
-
-    useEffect(() => {
-        // Set default selected faculty once faculty data is loaded
         if (faculty.length > 0 && !selectedFacultyId) {
             setSelectedFacultyId(faculty[0].id);
         }
@@ -51,44 +48,60 @@ const Constraints: React.FC = () => {
 
     const currentAvailability = constraints.facultyAvailability.find(a => a.facultyId === selectedFacultyId)?.availability;
 
-    const handleAvailabilityChange = async (newAvailability: Record<number, number[]>) => {
-        if (!selectedFacultyId) return;
-        const newConstraint: FacultyAvailability = { facultyId: selectedFacultyId, availability: newAvailability };
-        try {
-            await api.saveFacultyAvailability(newConstraint);
-            await refreshData();
+    const saveAvailabilityMutation = useMutation({
+        mutationFn: api.saveFacultyAvailability,
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['constraints'] });
             toast.success("Faculty availability saved.");
-        } catch (error: any) {
+        },
+        onError: (error: Error) => {
             toast.error(error.message || 'Failed to save availability.');
         }
+    });
+
+    const handleAvailabilityChange = (newAvailability: Record<number, number[]>) => {
+        if (!selectedFacultyId) return;
+        saveAvailabilityMutation.mutate({ facultyId: selectedFacultyId, availability: newAvailability });
     };
-    
-    const handleSave = useCallback(async (item: any) => {
-        const isPinned = activeTab === 'pinned';
-        try {
-            if (isPinned) await api.savePinnedAssignment(item);
-            else await api.savePlannedLeave(item);
-            await refreshData();
-            toast.success(`${isPinned ? 'Pinned Assignment' : 'Planned Leave'} saved successfully.`);
+
+    // FIX: Specify generic types for useMutation to handle the union return type of the mutation function.
+    const saveMutation = useMutation<any, Error, any>({
+        mutationFn: (item: any) => activeTab === 'pinned' ? api.savePinnedAssignment(item) : api.savePlannedLeave(item),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['constraints'] });
+            toast.success(`${activeTab === 'pinned' ? 'Pinned Assignment' : 'Planned Leave'} saved successfully.`);
             setIsModalOpen(false);
             setEditingItem(null);
-        } catch (error: any) {
-             toast.error(error.message || 'Failed to save item.');
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || 'Failed to save item.');
         }
-    }, [activeTab, refreshData, toast]);
+    });
+
+    const deleteMutation = useMutation({
+        mutationFn: (item: any) => activeTab === 'pinned' ? api.deletePinnedAssignment(item.id) : api.deletePlannedLeave(item.id),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['constraints'] });
+            toast.success('Item deleted successfully.');
+        },
+        onError: (error: Error) => {
+            toast.error(error.message || 'Failed to delete item.');
+        }
+    });
+    
+    const handleSave = useCallback((item: any) => {
+        saveMutation.mutate(item);
+    }, [saveMutation]);
 
     const handleDelete = useCallback(async (item: any) => {
-        const isPinned = activeTab === 'pinned';
-        if (!window.confirm(`Are you sure you want to delete this ${isPinned ? 'pinned assignment' : 'planned leave'}?`)) return;
-        try {
-            if (isPinned) await api.deletePinnedAssignment(item.id);
-            else await api.deletePlannedLeave(item.id);
-            await refreshData();
-            toast.success(`Item deleted successfully.`);
-        } catch (error: any) {
-             toast.error(error.message || 'Failed to delete item.');
+        const confirmed = await confirm({
+            title: `Delete ${activeTab === 'pinned' ? 'Pinned Assignment' : 'Planned Leave'}`,
+            description: 'Are you sure you want to delete this item? This action cannot be undone.'
+        });
+        if (confirmed) {
+            deleteMutation.mutate(item);
         }
-    }, [activeTab, refreshData, toast]);
+    }, [confirm, deleteMutation, activeTab]);
     
     const pinnedColumns: { header: string; accessor: keyof PinnedAssignment; render?: (item: PinnedAssignment) => React.ReactNode; }[] = [
         { accessor: 'name', header: 'Name' },
@@ -106,6 +119,30 @@ const Constraints: React.FC = () => {
         { accessor: 'endDate', header: 'End Date' },
         { accessor: 'reason', header: 'Reason' },
     ];
+
+    const AIBuiltConstraints = () => {
+        // ... (existing content, no data fetching logic to change)
+        return (
+             <div>
+                 <div className="flex items-center gap-3 mb-4 text-accent">
+                    <Bot size={24}/>
+                    <h3 className="text-xl font-bold text-white">AI-Assisted Constraint Builder</h3>
+                </div>
+                <p className="text-sm text-text-muted mb-4">
+                   Describe a scheduling rule in plain English. The AI will translate it into a formal constraint that the engine can understand. This feature is for demonstrating advanced logic and is not fully implemented.
+                </p>
+                <div className="space-y-4">
+                    <textarea 
+                        placeholder="e.g., 'No faculty member should teach for more than 3 consecutive hours' or 'First-year students should not have classes after 4 PM'" 
+                        className="glass-input min-h-[100px] text-sm"
+                    />
+                    <GlassButton icon={Wand2}>
+                        Build Rule with AI
+                    </GlassButton>
+                </div>
+            </div>
+        )
+    }
 
     const renderContent = () => {
         switch (activeTab) {
@@ -144,7 +181,7 @@ const Constraints: React.FC = () => {
                             data={constraints.pinnedAssignments} 
                             onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} 
                             onDelete={handleDelete}
-                            isLoading={loadingStates.constraints}
+                            isLoading={constraintsLoading}
                         />
                     </div>
                 );
@@ -159,10 +196,12 @@ const Constraints: React.FC = () => {
                             data={constraints.plannedLeaves} 
                             onEdit={(item) => { setEditingItem(item); setIsModalOpen(true); }} 
                             onDelete={handleDelete}
-                            isLoading={loadingStates.constraints}
+                            isLoading={constraintsLoading}
                         />
                     </div>
                 );
+            case 'presets':
+                return <AIBuiltConstraints />;
             default: return null;
         }
     }

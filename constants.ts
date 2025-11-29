@@ -1,4 +1,4 @@
-import { Book, LayoutDashboard, Settings, Sliders, FileText, Calendar, Lock } from 'lucide-react';
+import { Book, LayoutDashboard, Settings, Sliders, BarChart4, Calendar, Lock } from 'lucide-react';
 import type { NavItem } from './types';
 
 export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -9,7 +9,7 @@ export const NAV_ITEMS: NavItem[] = [
     { name: 'Scheduler', icon: Sliders },
     { name: 'Data Management', icon: Book },
     { name: 'Constraints', icon: Lock },
-    { name: 'Reports', icon: FileText },
+    { name: 'Analytics', icon: BarChart4 },
     { name: 'Settings', icon: Settings },
 ];
 
