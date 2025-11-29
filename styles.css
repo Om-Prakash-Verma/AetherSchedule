@@ -124,14 +124,6 @@ option {
     animation: pulse-danger 1.5s infinite;
 }
 
-@keyframes pulse-bg-danger {
-  0%, 100% { background-color: transparent; }
-  50% { background-color: hsl(var(--danger-hsl) / 0.2); }
-}
-.animate-pulse-bg-danger {
-    animation: pulse-bg-danger 2s infinite ease-in-out;
-}
-
 @keyframes shrink {
   from { width: 100%; }
   to { width: 0%; }
@@ -276,57 +268,4 @@ option {
     background-color: hsla(var(--bg-hsl), 0.8);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid var(--border);
-}
-
-/* NEW: Styles for the typewriter effect on the homepage */
-@keyframes typing {
-  from { width: 0; }
-  to { width: 100%; }
-}
-
-@keyframes blink-caret {
-  from, to { border-color: transparent; }
-  50% { border-color: var(--accent); }
-}
-
-.typewriter-text {
-  display: inline-block;
-  overflow: hidden;
-  white-space: nowrap;
-  letter-spacing: .05em;
-  border-right: 3px solid var(--accent);
-  animation: 
-    typing 4s steps(40, end) infinite,
-    blink-caret .75s step-end infinite;
-}
-
-/* NEW: Keyframes for flowcharts */
-@keyframes flow-in {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-.animate-flow-in {
-    animation: flow-in 0.4s ease-out forwards;
-    opacity: 0;
-}
-
-@keyframes draw-line {
-  from { 
-    transform: scaleX(0) scaleY(0);
-  }
-  to { 
-    transform: scaleX(1) scaleY(1);
-  }
-}
-
-.animate-draw-line {
-  animation: draw-line 0.3s ease-out forwards;
-  transform-origin: center;
-  transform: scale(0);
 }

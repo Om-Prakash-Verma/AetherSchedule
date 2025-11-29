@@ -84,12 +84,6 @@ export const updateTimetable = (updatedTimetable: GeneratedTimetable): Promise<G
     return saveTimetable(updatedTimetable);
 };
 
-export const deleteTimetable = (id: string): Promise<{ success: boolean }> => {
-    return apiFetch(`/api/timetables/${id}`, {
-        method: 'DELETE',
-    });
-};
-
 export const saveTimetableFeedback = (feedback: Omit<TimetableFeedback, 'id' | 'createdAt'>): Promise<TimetableFeedback> => {
     return apiFetch('/api/timetables/feedback', {
         method: 'POST',

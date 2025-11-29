@@ -125,7 +125,6 @@ const globalConstraints: GlobalConstraints = {
 const timetableSettings: TimetableSettings = {
     id: 1, collegeStartTime: '09:00', collegeEndTime: '17:00', periodDuration: 60,
     breaks: [{ name: 'Lunch Break', startTime: '13:00', endTime: '14:00' }],
-    workingDays: [0, 1, 2, 3, 4, 5],
 };
 
 export const initialData = {

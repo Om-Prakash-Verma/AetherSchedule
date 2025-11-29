@@ -5,7 +5,6 @@ import { AppProvider } from './context/AppContext';
 import { ToastProvider } from './context/ToastContext';
 import { ConfirmProvider } from './context/ConfirmContext';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import swUrl from './sw.js?url';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -28,13 +27,3 @@ root.render(
     </QueryClientProvider>
   </React.StrictMode>
 );
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register(swUrl, { type: 'module' }).then(registration => {
-      console.log('SW registered: ', registration);
-    }).catch(registrationError => {
-      console.log('SW registration failed: ', registrationError);
-    });
-  });
-}

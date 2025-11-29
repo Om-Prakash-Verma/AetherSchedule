@@ -11,7 +11,6 @@ import { useToast } from '../hooks/useToast';
 import type { User, Page } from '../types';
 import { generateTimeSlots } from '../utils/time';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DAYS_OF_WEEK } from '../constants';
 
 interface AppContextType {
   user: User | null;
@@ -22,9 +21,6 @@ interface AppContextType {
 
   isSidebarOpen: boolean;
   isSidebarCollapsed: boolean;
-  
-  workingDays: string[];
-  workingDaysIndices: number[];
 
   login: (user: User) => void;
   logout: () => void;
@@ -65,16 +61,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     [timetableSettings]
   );
   
-  const { workingDays, workingDaysIndices } = useMemo(() => {
-    if (timetableSettings?.workingDays && timetableSettings.workingDays.length > 0) {
-        const indices = timetableSettings.workingDays.sort((a, b) => a - b);
-        const days = indices.map(i => DAYS_OF_WEEK[i]);
-        return { workingDays: days, workingDaysIndices: indices };
-    }
-    // Fallback to default if not set
-    return { workingDays: DAYS_OF_WEEK, workingDaysIndices: [0, 1, 2, 3, 4, 5] };
-  }, [timetableSettings]);
-
   const refreshAllData = useCallback(async () => {
       toast.info("Refreshing all data...");
       await queryClient.invalidateQueries();
@@ -109,8 +95,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     appInitializationError: appInitializationError ? appInitializationError.message : null,
     isSidebarOpen,
     isSidebarCollapsed,
-    workingDays,
-    workingDaysIndices,
     login,
     logout,
     setCurrentPage,
@@ -119,7 +103,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     refreshAllData,
   }), [
       user, isLoading, currentPage, timeSlots, appInitializationError, 
-      isSidebarOpen, isSidebarCollapsed, refreshAllData, workingDays, workingDaysIndices
+      isSidebarOpen, isSidebarCollapsed, refreshAllData
   ]);
 
   return (

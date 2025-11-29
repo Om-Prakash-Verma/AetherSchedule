@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GlassPanel } from '../components/GlassPanel';
 import { useAppContext } from '../hooks/useAppContext';
@@ -8,7 +9,6 @@ import { Save, AlertTriangle, Trash2, Sliders, Clock, Coffee } from 'lucide-reac
 import { Slider } from '../components/ui/Slider';
 import { useConfirm } from '../hooks/useConfirm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { DAYS_OF_WEEK } from '../constants';
 
 const Settings: React.FC = () => {
     // FIX: Fetch settings with useQuery and get refresh function from context correctly.
@@ -45,16 +45,6 @@ const Settings: React.FC = () => {
                 ...localTimetableSettings, 
                 [name]: type === 'number' ? Number(value) : value 
             });
-        }
-    };
-    
-    const handleWorkingDayToggle = (dayIndex: number) => {
-        if (localTimetableSettings) {
-            const currentDays = localTimetableSettings.workingDays || [];
-            const newDays = currentDays.includes(dayIndex)
-                ? currentDays.filter(d => d !== dayIndex)
-                : [...currentDays, dayIndex].sort((a, b) => a - b);
-            setLocalTimetableSettings({ ...localTimetableSettings, workingDays: newDays });
         }
     };
 
@@ -174,24 +164,6 @@ const Settings: React.FC = () => {
                         <div>
                             <label className="text-sm">Period Duration (minutes)</label>
                             <input type="number" name="periodDuration" value={localTimetableSettings.periodDuration} onChange={handleTimetableChange} className="glass-input w-full mt-1"/>
-                        </div>
-                        <div>
-                            <label className="text-sm">Working Days</label>
-                            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2 mt-1">
-                                {DAYS_OF_WEEK.map((day, index) => (
-                                    <button
-                                        key={day}
-                                        onClick={() => handleWorkingDayToggle(index)}
-                                        className={`p-2 rounded-lg text-sm font-semibold transition-all duration-200 border
-                                            ${localTimetableSettings.workingDays?.includes(index)
-                                                ? 'bg-accent text-white border-transparent'
-                                                : 'bg-panel-strong text-text-muted border-border hover:border-accent/50'
-                                            }`}
-                                    >
-                                        {day.substring(0, 3)}
-                                    </button>
-                                ))}
-                            </div>
                         </div>
                          <div>
                             <div className="flex items-center gap-3 mb-2">

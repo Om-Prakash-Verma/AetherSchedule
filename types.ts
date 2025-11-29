@@ -205,23 +205,12 @@ export interface TimetableSettings {
     collegeEndTime: string; // "HH:mm"
     periodDuration: number; // in minutes
     breaks: { name: string; startTime: string; endTime: string }[];
-    workingDays: number[]; // Array of day indices (0=Mon, 1=Tue, ...)
 }
 
-export type ConflictType = 
-  | 'Faculty Double-Booking' 
-  | 'Room Double-Booking' 
-  | 'Batch Double-Booking'
-  | 'Faculty Unavailability'
-  | 'Pinned Assignment Clash'
-  | 'Room Capacity'
-  | 'Room Type Mismatch'
-  | 'Room Allocation Mismatch'
-  | 'Faculty Allocation Mismatch';
 
 export interface Conflict {
-  type: ConflictType;
-  message: string;
+    type: 'Faculty' | 'Room' | 'Batch';
+    message: string;
 }
 
 export type DropChange = 
@@ -250,14 +239,4 @@ export interface RankedSubstitute {
     suitableSubjects: Subject[];
     score: number;
     reasons: string[];
-}
-
-export interface ValidationContext {
-    subjects: Subject[];
-    faculty: Faculty[];
-    rooms: Room[];
-    batches: Batch[];
-    constraints: Constraints;
-    facultyAllocations: FacultyAllocation[];
-    timetableSettings: TimetableSettings;
 }

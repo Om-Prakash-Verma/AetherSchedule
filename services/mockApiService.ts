@@ -61,8 +61,6 @@ export const runScheduler = async (batchIds: string[]): Promise<GeneratedTimetab
       days: DAYS_OF_WEEK, 
       // FIX: The scheduler engine now expects timetableSettings, not a static slots array.
       timetableSettings: db.timetableSettings,
-      // FIX: Add missing workingDaysIndices property to satisfy the SchedulerInput type.
-      workingDaysIndices: db.timetableSettings.workingDays || [0, 1, 2, 3, 4, 5],
       candidateCount: 5,
     });
   
