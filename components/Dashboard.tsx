@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { AlertTriangle, CheckCircle, Users, Box, TrendingUp, Sparkles, RefreshCcw } from 'lucide-react';
@@ -58,15 +57,15 @@ const Dashboard = () => {
 
     return (
         <div className="space-y-8 relative z-10">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                    <h2 className="text-3xl font-bold text-white">Operations Dashboard</h2>
-                    <p className="text-slate-400">Real-time overview of academic resources and scheduling health.</p>
+                    <h2 className="text-2xl md:text-3xl font-bold text-white">Operations Dashboard</h2>
+                    <p className="text-sm md:text-base text-slate-400">Real-time overview of academic resources and scheduling health.</p>
                 </div>
                 <button 
                     onClick={runDiagnostics}
                     disabled={isAnalyzing}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-indigo-600 rounded-lg text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                    className="w-full md:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-primary to-indigo-600 rounded-lg text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
                 >
                     {isAnalyzing ? <RefreshCcw className="animate-spin" size={18} /> : <Sparkles size={18} />}
                     {isAnalyzing ? "Running Diagnostics..." : "Run AI Pre-flight Check"}
@@ -74,7 +73,7 @@ const Dashboard = () => {
             </div>
 
             {/* KPI Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
                 <KPICard 
                     title="Total Classes" 
                     value={totalClasses} 
@@ -115,8 +114,8 @@ const Dashboard = () => {
                     
                     {aiAnalysis ? (
                         <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                             <div className="flex items-center gap-4 mb-4">
-                                <div className="relative h-16 w-16 flex items-center justify-center rounded-full border-4 border-slate-700">
+                             <div className="flex flex-col sm:flex-row items-center gap-4 mb-4">
+                                <div className="relative h-16 w-16 flex items-center justify-center rounded-full border-4 border-slate-700 flex-shrink-0">
                                     <span className={clsx("text-xl font-bold", aiAnalysis.score > 80 ? "text-green-400" : "text-amber-400")}>
                                         {aiAnalysis.score}
                                     </span>
@@ -128,7 +127,7 @@ const Dashboard = () => {
                                         />
                                     </svg>
                                 </div>
-                                <div>
+                                <div className="text-center sm:text-left">
                                     <h4 className="font-semibold text-white">System Health Score</h4>
                                     <p className="text-sm text-slate-400">Based on conflicts, gaps, and workload distribution.</p>
                                 </div>
@@ -143,7 +142,7 @@ const Dashboard = () => {
                                 <ul className="space-y-2">
                                     {aiAnalysis.suggestions.map((s, i) => (
                                         <li key={i} className="flex items-start gap-2 text-sm text-slate-300">
-                                            <CheckCircle size={16} className="text-primary mt-0.5" />
+                                            <CheckCircle size={16} className="text-primary mt-0.5 flex-shrink-0" />
                                             {s}
                                         </li>
                                     ))}
@@ -151,7 +150,7 @@ const Dashboard = () => {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center justify-center h-64 text-slate-500">
+                        <div className="flex flex-col items-center justify-center h-48 md:h-64 text-slate-500 text-center">
                             <Sparkles size={48} className="mb-4 opacity-20" />
                             <p>Run diagnostics to generate an AI Health Report.</p>
                         </div>

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { Clock, Calendar, Coffee, Plus, Trash2, Save, AlertCircle, Edit, X, CheckCircle } from 'lucide-react';
@@ -151,7 +150,7 @@ const Settings = () => {
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-2xl font-bold text-white">System Configuration</h2>
                     <p className="text-slate-400">Define the temporal structure of your academic day.</p>
@@ -159,7 +158,7 @@ const Settings = () => {
                 <button 
                     onClick={handleSave}
                     disabled={!isDirty}
-                    className="flex items-center gap-2 px-6 py-2 bg-primary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all shadow-lg shadow-primary/20"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-primary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all shadow-lg shadow-primary/20"
                 >
                     <Save size={18} />
                     Save Changes
@@ -185,7 +184,7 @@ const Settings = () => {
                     </h3>
                     
                     <div className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">College Start Time</label>
                                 <input 
@@ -241,7 +240,7 @@ const Settings = () => {
                                     key={day}
                                     onClick={() => toggleDay(day)}
                                     className={clsx(
-                                        "w-12 h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center border",
+                                        "w-10 h-10 sm:w-12 sm:h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center border",
                                         isActive 
                                             ? "bg-primary text-white border-primary shadow-[0_0_10px_rgba(99,102,241,0.4)] scale-105" 
                                             : "bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800 hover:text-slate-300"
@@ -265,8 +264,8 @@ const Settings = () => {
                     Breaks & Recess
                 </h3>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2 space-y-3">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 space-y-3">
                         {(!formData.breaks || formData.breaks.length === 0) && (
                             <div className="text-center p-8 bg-slate-800/30 rounded-xl border border-dashed border-slate-700 text-slate-500">
                                 No breaks defined. Classes will run continuously.

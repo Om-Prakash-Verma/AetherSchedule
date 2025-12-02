@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { User, BookOpen, Layers, Box, Plus, X, Check, Trash2, AlertTriangle, Building, ChevronDown, Edit, UserCheck, Users } from 'lucide-react';
@@ -18,7 +17,7 @@ interface DataTableProps {
 
 const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns, onAdd, onEdit, onDelete }) => {
     return (
-        <div className="rounded-2xl border border-glassBorder bg-glass backdrop-blur-md flex flex-col overflow-hidden h-full group">
+        <div className="rounded-2xl border border-glassBorder bg-glass backdrop-blur-md flex flex-col overflow-hidden h-[300px] lg:h-full group">
             <div className="p-4 border-b border-glassBorder flex items-center gap-2 bg-slate-900/50">
                 <Icon size={18} className="text-primary" />
                 <h3 className="font-bold text-white">{title}</h3>
@@ -33,12 +32,12 @@ const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns,
                     <Plus size={16} />
                 </button>
             </div>
-            <div className="overflow-y-auto flex-1 p-0">
-                <table className="w-full text-sm text-left text-slate-400">
+            <div className="overflow-auto flex-1 p-0">
+                <table className="w-full text-sm text-left text-slate-400 min-w-[300px]">
                     <thead className="text-xs text-slate-500 uppercase bg-slate-900/30 sticky top-0 z-10">
                         <tr>
                             {columns.map((col: any) => (
-                                <th key={col.key} className="px-6 py-3">{col.label}</th>
+                                <th key={col.key} className="px-6 py-3 whitespace-nowrap">{col.label}</th>
                             ))}
                             {(onEdit || onDelete) && <th className="px-6 py-3 w-24 text-right">Actions</th>}
                         </tr>
@@ -48,7 +47,7 @@ const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns,
                             data.map((item: any) => (
                                 <tr key={item.id} className="border-b border-glassBorder hover:bg-white/5 transition-colors group/row relative">
                                     {columns.map((col: any) => (
-                                        <td key={col.key} className="px-6 py-4">
+                                        <td key={col.key} className="px-6 py-4 whitespace-nowrap">
                                             {col.render ? col.render(item) : item[col.key]}
                                         </td>
                                     ))}
@@ -286,7 +285,8 @@ const ResourceModal = ({
                                      ) : (
                                          <div className="p-1 space-y-1">
                                              {subjects.map(s => {
-                                                 const isSelected = formData.subjects?.includes(s.id);
+                                                 const isSelected = (formData.subjects || []).includes(s.id);
+                                                 const assignedSubjects = faculty.flatMap(f => f.subjects || []).filter(id => id === s.id).length;
                                                  return (
                                                      <div
                                                         key={s.id}
@@ -317,7 +317,7 @@ const ResourceModal = ({
                             <label className="block text-xs font-medium text-slate-400 mb-1">Subject Name</label>
                             <input name="name" value={formData.name || ''} required autoFocus className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary" onChange={handleChange} />
                         </div>
-                        <div className="grid grid-cols-3 gap-4 mb-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Code</label>
                                 <input name="code" value={formData.code || ''} required className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary" onChange={handleChange} />
@@ -371,7 +371,7 @@ const ResourceModal = ({
                             <label className="block text-xs font-medium text-slate-400 mb-1">Batch Name</label>
                             <input name="name" value={formData.name || ''} required autoFocus className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary" onChange={handleChange} />
                         </div>
-                        <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Size (Students)</label>
                                 <input name="size" value={formData.size || ''} type="number" required className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary" onChange={handleChange} />
@@ -561,8 +561,8 @@ const ResourceModal = ({
     const titlePrefix = isEditing ? "Edit" : "Add New";
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-glassBorder rounded-2xl w-full max-w-md shadow-2xl p-6 relative">
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-slate-900 border border-glassBorder rounded-t-2xl sm:rounded-2xl w-full max-w-md shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
                 <button 
                     onClick={onClose}
                     className="absolute top-4 right-4 text-slate-500 hover:text-white"
@@ -578,7 +578,7 @@ const ResourceModal = ({
                 <form onSubmit={handleSubmit}>
                     {renderFormFields()}
                     
-                    <div className="flex justify-end gap-3 mt-6">
+                    <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-slate-800">
                         <button 
                             type="button" 
                             onClick={onClose}
@@ -760,8 +760,8 @@ const DataManagement = () => {
     };
 
     return (
-        <div className="h-[calc(100vh-8rem)]">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full pb-8">
+        <div className="h-full">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-20">
                 <DataTable 
                     title="Faculty" 
                     icon={User} 
