@@ -278,9 +278,22 @@ export const generateScheduleWithGemini = async (
     const slots = generatedSlots;
     const totalSlotsPerDay = slots.length;
 
+    // Construct detailed timetable structure for the AI
+    const timetableStructure = {
+        collegeStartTime: settings.collegeStartTime,
+        collegeEndTime: settings.collegeEndTime,
+        periodDuration: `${settings.periodDuration} minutes`,
+        definedBreaks: settings.breaks.map(b => ({
+            name: b.name,
+            time: `${b.startTime} - ${b.endTime}`
+        })),
+        slotsArray: slots // ["09:00 - 10:00", "10:00 - 11:00", etc.]
+    };
+
     const inputData = {
         targetMode: targetBatchId ? "SINGLE_BATCH" : "ALL_BATCHES",
         targetBatchName: targetBatchId ? batchesToSchedule[0].name : "All",
+        timetableStructure: timetableStructure,
         batches: cleanBatches,
         subjects: cleanSubjects,
         faculty: cleanFaculty,
@@ -289,7 +302,6 @@ export const generateScheduleWithGemini = async (
         busySlots: busySlots, // AI must check this list
         config: {
             days,
-            slots,
             totalSlotsPerDay
         }
     };
@@ -298,6 +310,17 @@ export const generateScheduleWithGemini = async (
     const prompt = `
         You are the engine of AetherSchedule, a world-class academic constraint solver.
         Your task is to generate a TIMETABLE for: ${targetBatchId ? "The specific batch '" + batchesToSchedule[0].name + "'" : "ALL batches"}.
+
+        *** TIMETABLE STRUCTURE & BREAKS ***
+        The institution follows a specific time structure:
+        - Class Duration: ${settings.periodDuration} minutes.
+        - Start: ${settings.collegeStartTime}, End: ${settings.collegeEndTime}.
+        - Breaks: ${JSON.stringify(settings.breaks.map(b => `${b.name} (${b.startTime}-${b.endTime})`))}.
+        - Available Slots: ${JSON.stringify(slots)}.
+        
+        The 'slot' output field corresponds to the 1-based index of the 'Available Slots' array.
+        (e.g., Slot 1 = ${slots[0]}, Slot 2 = ${slots[1]}).
+        Do not schedule classes during break times (breaks are typically already excluded from the 'Available Slots' list, but be aware of the gap).
 
         *** CRITICAL INSTRUCTION: STRICT TEACHER ASSIGNMENT ***
         For a given Batch and Subject, you MUST schedule ALL the faculty members listed in 'assignedFacultyIds' for that slot.
@@ -323,9 +346,11 @@ export const generateScheduleWithGemini = async (
         1. **Conflict Free**: No double booking of Faculty, Rooms, or Batches (check both internal generation AND external 'busySlots').
         2. **Room Capacity**: Room capacity must be >= Batch size.
         3. **Room Type**: If subject requires 'LAB', it MUST be in a room with type 'LAB'.
+        4. **Distribution Constraint**: For 'LECTURE' type subjects, you MUST NOT schedule more than 1 lecture of the same subject on the same day. Spread them across different days.
+           EXCEPTION: 'LAB' type subjects SHOULD be scheduled consecutively on the same day.
 
         OPTIMIZATION GOALS:
-        1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back).
+        1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back) on the SAME day.
         2. **Teacher Fatigue**: Avoid scheduling the same faculty member for more than 4 consecutive slots.
         3. **Completeness**: You MUST schedule exactly 'lecturesPerWeek' slots for EVERY subject for the target batch(es).
 

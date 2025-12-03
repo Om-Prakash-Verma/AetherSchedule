@@ -158,7 +158,7 @@ const Settings = () => {
                 <button 
                     onClick={handleSave}
                     disabled={!isDirty}
-                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2 bg-primary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all shadow-lg shadow-primary/20"
+                    className="w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-primary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-medium transition-all shadow-lg shadow-primary/20 active:scale-95 sm:active:scale-100"
                 >
                     <Save size={18} />
                     Save Changes
@@ -183,30 +183,30 @@ const Settings = () => {
                         Time & Duration
                     </h3>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-5">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1">College Start Time</label>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">College Start Time</label>
                                 <input 
                                     type="time" 
                                     value={formData.collegeStartTime}
                                     onChange={(e) => handleChange('collegeStartTime', e.target.value)}
-                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary"
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-primary focus:border-primary"
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-slate-400 mb-1">College End Time</label>
+                                <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">College End Time</label>
                                 <input 
                                     type="time" 
                                     value={formData.collegeEndTime}
                                     onChange={(e) => handleChange('collegeEndTime', e.target.value)}
-                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-primary focus:border-primary"
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-primary focus:border-primary"
                                 />
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-xs font-medium text-slate-400 mb-1">Class Period Duration (Minutes)</label>
+                            <label className="block text-xs font-medium text-slate-400 mb-1.5 uppercase tracking-wide">Class Period Duration (Minutes)</label>
                             <div className="flex items-center gap-4">
                                 <input 
                                     type="range" 
@@ -217,7 +217,7 @@ const Settings = () => {
                                     onChange={(e) => handleChange('periodDuration', parseInt(e.target.value))}
                                     className="flex-1 h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary"
                                 />
-                                <span className="bg-slate-800 border border-slate-700 text-white px-3 py-1 rounded-md font-mono w-16 text-center">
+                                <span className="bg-slate-800 border border-slate-700 text-white px-3 py-1.5 rounded-md font-mono w-16 text-center">
                                     {formData.periodDuration}m
                                 </span>
                             </div>
@@ -232,7 +232,7 @@ const Settings = () => {
                         Working Days
                     </h3>
                     
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-3">
                         {DAYS.map(day => {
                             const isActive = (formData.workingDays || []).includes(day);
                             return (
@@ -240,7 +240,7 @@ const Settings = () => {
                                     key={day}
                                     onClick={() => toggleDay(day)}
                                     className={clsx(
-                                        "w-10 h-10 sm:w-12 sm:h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center border",
+                                        "w-11 h-11 sm:w-12 sm:h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center border",
                                         isActive 
                                             ? "bg-primary text-white border-primary shadow-[0_0_10px_rgba(99,102,241,0.4)] scale-105" 
                                             : "bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800 hover:text-slate-300"
@@ -251,7 +251,7 @@ const Settings = () => {
                             );
                         })}
                     </div>
-                    <p className="mt-4 text-xs text-slate-500">
+                    <p className="mt-5 text-xs text-slate-500">
                         Selected days will appear in the main scheduler grid.
                     </p>
                 </div>
@@ -265,7 +265,7 @@ const Settings = () => {
                 </h3>
 
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <div className="lg:col-span-2 space-y-3">
+                    <div className="lg:col-span-2 space-y-3 order-2 lg:order-1">
                         {(!formData.breaks || formData.breaks.length === 0) && (
                             <div className="text-center p-8 bg-slate-800/30 rounded-xl border border-dashed border-slate-700 text-slate-500">
                                 No breaks defined. Classes will run continuously.
@@ -320,7 +320,7 @@ const Settings = () => {
                         ))}
                     </div>
 
-                    <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-4 h-fit">
+                    <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-4 h-fit order-1 lg:order-2">
                         <div className="flex items-center justify-between mb-4">
                             <h4 className="text-sm font-semibold text-white">
                                 {editingBreakId ? "Edit Break" : "Add New Break"}
@@ -349,7 +349,7 @@ const Settings = () => {
                                     placeholder="Break Name (e.g. Lunch)"
                                     value={breakForm.name}
                                     onChange={(e) => setBreakForm({...breakForm, name: e.target.value})}
-                                    className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-white focus:ring-primary focus:border-primary placeholder-slate-500"
+                                    className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary placeholder-slate-500"
                                 />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -357,19 +357,19 @@ const Settings = () => {
                                     type="time" 
                                     value={breakForm.startTime}
                                     onChange={(e) => setBreakForm({...breakForm, startTime: e.target.value})}
-                                    className="bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-white focus:ring-primary focus:border-primary"
+                                    className="bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary"
                                 />
                                 <input 
                                     type="time" 
                                     value={breakForm.endTime}
                                     onChange={(e) => setBreakForm({...breakForm, endTime: e.target.value})}
-                                    className="bg-slate-800 border border-slate-600 rounded-lg p-2 text-sm text-white focus:ring-primary focus:border-primary"
+                                    className="bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary"
                                 />
                             </div>
                             <button 
                                 onClick={handleBreakSubmit}
                                 className={clsx(
-                                    "w-full py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
+                                    "w-full py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2",
                                     editingBreakId 
                                         ? "bg-primary hover:bg-indigo-500 text-white" 
                                         : "bg-slate-700 hover:bg-slate-600 text-white"

@@ -13,23 +13,25 @@ interface DataTableProps {
 
 const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns, onAdd, onEdit, onDelete }) => {
     return (
-        <div className="rounded-2xl border border-glassBorder bg-glass backdrop-blur-md flex flex-col overflow-hidden h-full min-h-[500px] group transition-all duration-300">
-            <div className="p-5 border-b border-glassBorder flex items-center gap-3 bg-slate-900/50">
-                <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                    <Icon size={20} />
-                </div>
-                <div>
-                    <h3 className="font-bold text-white text-lg">{title}</h3>
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{data.length} Records</p>
+        <div className="rounded-2xl border border-glassBorder bg-glass backdrop-blur-md flex flex-col overflow-hidden h-full min-h-[500px] group transition-all duration-300 shadow-xl">
+            <div className="p-5 border-b border-glassBorder flex flex-col sm:flex-row sm:items-center gap-4 bg-slate-900/50">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                        <Icon size={20} />
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-white text-lg">{title}</h3>
+                        <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">{data.length} Records</p>
+                    </div>
                 </div>
                 
                 <button 
                     onClick={onAdd}
-                    className="ml-auto flex items-center gap-2 px-4 py-2 rounded-xl bg-primary hover:bg-indigo-500 text-white shadow-lg shadow-primary/20 transition-all active:scale-95"
+                    className="sm:ml-auto w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-primary hover:bg-indigo-500 text-white shadow-lg shadow-primary/20 transition-all active:scale-95 font-medium text-sm"
                     title={`Add ${title}`}
                 >
                     <Plus size={18} />
-                    <span className="hidden sm:inline font-medium">Add New</span>
+                    <span>Add New</span>
                 </button>
             </div>
             <div className="overflow-auto flex-1 p-0 custom-scrollbar">
@@ -53,7 +55,7 @@ const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns,
                                     ))}
                                     {(onEdit || onDelete) && (
                                         <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                                            <div className="flex justify-end gap-2 opacity-100 sm:opacity-0 sm:group-hover/row:opacity-100 transition-opacity">
                                                 {onEdit && (
                                                     <button 
                                                         onClick={(e) => {

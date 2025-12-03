@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleEntry } from '../types';
-import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock } from 'lucide-react';
+import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock, Coffee } from 'lucide-react';
 import { clsx } from 'clsx';
 import { chatWithScheduler, generateScheduleWithGemini } from '../services/geminiService';
+import { generateTimeline, TimelineItem } from '../core/TimeUtils';
 
 const Scheduler = () => {
     const { 
@@ -28,6 +29,9 @@ const Scheduler = () => {
     // Filter schedule for the view
     const currentSchedule = schedule.filter(s => s.batchId === selectedBatchId);
 
+    // Generate the full timeline (Slots + Breaks) for rendering
+    const timeline = useMemo(() => generateTimeline(settings), [settings]);
+
     // Timer for generation feedback
     useEffect(() => {
         let interval: any;
@@ -44,7 +48,7 @@ const Scheduler = () => {
 
     const getCellContent = (day: string, slotIndex: number) => {
         // Slot is 1-indexed in database, so we pass index + 1
-        return currentSchedule.find(s => s.day === day && s.slot === (slotIndex + 1));
+        return currentSchedule.find(s => s.day === day && s.slot === slotIndex);
     };
 
     const handleCellClick = (day: string, slotIndex: number) => {
@@ -54,7 +58,7 @@ const Scheduler = () => {
             return;
         }
 
-        const slot = slotIndex + 1;
+        const slot = slotIndex;
         const existing = getCellContent(day, slotIndex);
         
         if (existing) {
@@ -143,18 +147,16 @@ const Scheduler = () => {
     }
 
     const safeWorkingDays = (settings.workingDays || []);
-    // Fallback if settings aren't loaded yet
-    const safeGeneratedSlots = generatedSlots || [];
 
     return (
         <div className="flex flex-col h-full space-y-6">
-            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
+            <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full lg:w-auto">
                     <h2 className="text-2xl font-bold text-white whitespace-nowrap">Master Schedule</h2>
                     <select 
                         value={selectedBatchId}
                         onChange={(e) => setSelectedBatchId(e.target.value)}
-                        className="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg focus:ring-primary focus:border-primary block p-2.5 w-full sm:min-w-[200px]"
+                        className="bg-slate-800 border border-slate-700 text-white text-sm rounded-xl focus:ring-primary focus:border-primary block p-2.5 w-full sm:w-auto sm:min-w-[200px]"
                     >
                          {batches.length === 0 && <option value="">No Batches Found</option>}
                         {batches.map(b => (
@@ -162,22 +164,22 @@ const Scheduler = () => {
                         ))}
                     </select>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
                     {/* Version Control Button */}
                     <button 
                         onClick={() => setVersionModalOpen(true)}
-                        className="flex-1 sm:flex-none justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap"
+                        className="flex-1 sm:flex-none justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors whitespace-nowrap text-sm font-medium"
                         title="Version History"
                     >
-                        <History size={16} />
-                        Versions
+                        <History size={18} />
+                        <span className="hidden sm:inline">Versions</span>
                     </button>
 
                     <button 
                         onClick={handleGenerate}
                         disabled={isGenerating || !selectedBatchId}
                         className={clsx(
-                            "flex-1 sm:flex-none justify-center px-4 py-2 rounded-lg flex items-center gap-2 transition-all whitespace-nowrap shadow-lg",
+                            "flex-grow sm:flex-none justify-center px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all whitespace-nowrap shadow-lg text-sm font-medium",
                             isGenerating 
                                 ? "bg-slate-800 border border-emerald-500/30 text-emerald-400 cursor-wait shadow-none" 
                                 : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -186,29 +188,30 @@ const Scheduler = () => {
                         {isGenerating ? (
                             <>
                                 <Loader2 size={18} className="animate-spin" />
-                                <span className="animate-pulse font-medium">Generating... {elapsedTime}s</span>
+                                <span className="animate-pulse">Generating... {elapsedTime}s</span>
                             </>
                         ) : (
                             <>
                                 <Sparkles size={18} />
-                                <span>Auto-Schedule Batch</span>
+                                <span>Auto-Schedule</span>
                             </>
                         )}
                     </button>
 
                     <button 
                         onClick={resetData}
-                        className="flex-1 sm:flex-none justify-center text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm font-medium px-4 py-2 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap"
+                        className="flex-1 sm:flex-none justify-center text-red-400 hover:text-red-300 hover:bg-red-400/10 text-sm font-medium px-4 py-2.5 rounded-xl transition-colors flex items-center gap-2 whitespace-nowrap border border-transparent hover:border-red-400/20"
                         title="Clear entire timetable database"
                     >
-                        <Trash2 size={16} />
-                        Clear Timetable
+                        <Trash2 size={18} />
+                        <span className="hidden sm:inline">Clear</span>
                     </button>
                     <button 
                         onClick={() => setAiChatOpen(!aiChatOpen)}
-                        className="flex-1 sm:flex-none justify-center bg-primary hover:bg-indigo-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap"
+                        className="flex-1 sm:flex-none justify-center bg-primary hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors whitespace-nowrap text-sm font-medium shadow-lg shadow-primary/20"
                     >
-                        Ask AI Assistant
+                        <span className="hidden sm:inline">AI Assistant</span>
+                        <span className="sm:hidden">AI</span>
                     </button>
                 </div>
             </div>
@@ -222,7 +225,7 @@ const Scheduler = () => {
                                 <History size={20} className="text-primary" />
                                 Version History
                             </h3>
-                            <button onClick={() => setVersionModalOpen(false)} className="text-slate-500 hover:text-white">
+                            <button onClick={() => setVersionModalOpen(false)} className="text-slate-500 hover:text-white p-2">
                                 <X size={20} />
                             </button>
                         </div>
@@ -230,7 +233,7 @@ const Scheduler = () => {
                         {/* Save New Version */}
                         <div className="mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700">
                             <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Save Current State</label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col sm:flex-row gap-2">
                                 <input 
                                     type="text" 
                                     placeholder="Version Name (e.g. Draft 1)" 
@@ -241,7 +244,7 @@ const Scheduler = () => {
                                 <button 
                                     onClick={handleSaveVersion}
                                     disabled={loading || !newVersionName}
-                                    className="px-4 py-2 bg-primary hover:bg-indigo-500 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                                    className="px-4 py-2 bg-primary hover:bg-indigo-500 text-white rounded-lg flex items-center justify-center gap-2 disabled:opacity-50 transition-colors font-medium"
                                 >
                                     <Save size={16} />
                                     Save
@@ -250,10 +253,10 @@ const Scheduler = () => {
                         </div>
 
                         {/* List Versions */}
-                        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                             <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Previous Versions</label>
                             {versions.length === 0 ? (
-                                <div className="text-center py-8 text-slate-500 text-sm">No saved versions found.</div>
+                                <div className="text-center py-8 text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl">No saved versions found.</div>
                             ) : (
                                 versions.map(v => (
                                     <div key={v.id} className="flex items-center justify-between p-3 bg-slate-800/30 border border-slate-700 rounded-lg hover:border-slate-500 transition-colors group">
@@ -325,17 +328,25 @@ const Scheduler = () => {
 
             {/* Timetable Grid - Horizontal Scroll Container */}
             <div className="overflow-hidden rounded-xl border border-glassBorder bg-glass backdrop-blur-sm shadow-xl flex-1 flex flex-col">
-                <div className="overflow-x-auto flex-1">
+                <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full border-collapse min-w-[800px]">
                         <thead>
                             <tr>
-                                <th className="p-4 border-b border-r border-glassBorder bg-slate-900/50 text-left min-w-[100px] text-slate-400 font-medium sticky left-0 z-20 backdrop-blur-md">
+                                <th className="p-4 border-b border-r border-glassBorder bg-slate-900/50 text-left min-w-[100px] text-slate-400 font-medium sticky left-0 z-20 backdrop-blur-md shadow-[4px_0_12px_-2px_rgba(0,0,0,0.5)]">
                                     Day / Time
                                 </th>
-                                {safeGeneratedSlots.map((slotTime, index) => (
-                                    <th key={index} className="p-4 border-b border-glassBorder bg-slate-900/50 text-center min-w-[140px]">
-                                        <div className="text-white font-bold">Slot {index + 1}</div>
-                                        <div className="text-xs text-slate-500 font-mono mt-1">{slotTime}</div>
+                                {timeline.map((item, index) => (
+                                    <th 
+                                        key={index} 
+                                        className={clsx(
+                                            "p-4 border-b border-glassBorder bg-slate-900/50 text-center min-w-[140px]",
+                                            item.type === 'BREAK' && "bg-slate-900/30"
+                                        )}
+                                    >
+                                        <div className={clsx("font-bold", item.type === 'BREAK' ? "text-amber-500/80" : "text-white")}>
+                                            {item.name}
+                                        </div>
+                                        <div className="text-xs text-slate-500 font-mono mt-1">{item.timeString}</div>
                                     </th>
                                 ))}
                             </tr>
@@ -343,12 +354,23 @@ const Scheduler = () => {
                         <tbody>
                             {safeWorkingDays.map(day => (
                                 <tr key={day} className="group hover:bg-white/5 transition-colors">
-                                    <td className="p-4 border-r border-b border-glassBorder bg-slate-900/30 font-bold text-white sticky left-0 z-10 backdrop-blur-md">
+                                    <td className="p-4 border-r border-b border-glassBorder bg-slate-900/30 font-bold text-white sticky left-0 z-10 backdrop-blur-md shadow-[4px_0_12px_-2px_rgba(0,0,0,0.5)]">
                                         {day}
                                     </td>
-                                    {safeGeneratedSlots.map((_, index) => {
-                                        const slot = index + 1; // 1-based for DB
-                                        const entry = getCellContent(day, index);
+                                    {timeline.map((item, index) => {
+                                        if (item.type === 'BREAK') {
+                                            return (
+                                                <td key={`break-${index}`} className="p-2 border-b border-glassBorder bg-slate-950/40 relative">
+                                                    <div className="absolute inset-0 flex items-center justify-center opacity-10">
+                                                        <Coffee size={24} className="text-amber-500" />
+                                                    </div>
+                                                </td>
+                                            );
+                                        }
+
+                                        // Item is a CLASS SLOT
+                                        const slot = item.slotIndex!; 
+                                        const entry = getCellContent(day, slot);
                                         
                                         // Find specific conflict to display details
                                         const conflict = conflicts.find(c => c.involvedIds.includes(entry?.id || ''));
@@ -367,7 +389,7 @@ const Scheduler = () => {
                                         return (
                                             <td 
                                                 key={`${day}-${slot}`} 
-                                                onClick={() => handleCellClick(day, index)}
+                                                onClick={() => handleCellClick(day, slot)}
                                                 className={clsx(
                                                     "p-2 border-b border-glassBorder relative h-32 cursor-pointer transition-all hover:bg-white/5 group/cell",
                                                     hasConflict ? "bg-red-500/10" : ""
@@ -430,18 +452,22 @@ const Scheduler = () => {
                 </div>
             </div>
             
-            <div className="flex flex-wrap gap-4 text-sm text-slate-500 px-2 pb-6">
+            <div className="flex flex-wrap gap-4 text-xs md:text-sm text-slate-500 px-2 pb-6">
                 <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-primary/20 border border-primary/30"></div>
-                    <span>Scheduled Class</span>
+                    <div className="w-3 h-3 md:w-4 md:h-4 rounded bg-primary/20 border border-primary/30"></div>
+                    <span>Class</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-red-500/20 border border-red-500/50"></div>
-                    <span>Conflict Detected (Hover for details)</span>
+                    <div className="w-3 h-3 md:w-4 md:h-4 rounded bg-red-500/20 border border-red-500/50"></div>
+                    <span>Conflict</span>
                 </div>
                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded bg-slate-700/50 border border-slate-600"></div>
-                    <span>Locked (Manual)</span>
+                    <div className="w-3 h-3 md:w-4 md:h-4 rounded bg-slate-700/50 border border-slate-600"></div>
+                    <span>Locked</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 md:w-4 md:h-4 rounded bg-amber-500/20 border border-amber-500/30"></div>
+                    <span>Break</span>
                 </div>
             </div>
         </div>

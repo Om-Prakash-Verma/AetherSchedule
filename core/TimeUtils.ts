@@ -29,76 +29,101 @@ export const minutesToReadableTime = (minutes: number): string => {
     return `${h}:${m.toString().padStart(2, '0')} ${ampm}`;
 };
 
+export interface TimelineItem {
+    type: 'SLOT' | 'BREAK';
+    name: string;
+    startTime: number;
+    endTime: number;
+    timeString: string;
+    slotIndex?: number; // Only for slots
+}
+
 /**
- * Generates an array of time slot strings based on settings.
- * Handles breaks by skipping overlapping periods.
- * Returns array of strings like "09:00 AM - 10:00 AM".
+ * Generates an ordered timeline including both class slots and breaks.
  */
-export const generateTimeSlots = (settings: TimetableSettings): string[] => {
-    const slots: string[] = [];
+export const generateTimeline = (settings: TimetableSettings): TimelineItem[] => {
+    const timeline: TimelineItem[] = [];
     const startMins = timeToMinutes(settings.collegeStartTime);
     const endMins = timeToMinutes(settings.collegeEndTime);
     const duration = settings.periodDuration;
 
-    // Sort breaks by start time to handle them in order
-    const sortedBreaks = [...settings.breaks].sort((a, b) => 
-        timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
-    );
+    // Prepare breaks with minute values
+    const breaks = (settings.breaks || []).map(b => ({
+        ...b,
+        start: timeToMinutes(b.startTime),
+        end: timeToMinutes(b.endTime)
+    })).sort((a, b) => a.start - b.start);
 
     let current = startMins;
-
-    // Safety break to prevent infinite loops in case of bad data
+    let slotCounter = 1;
     let iterations = 0;
-    const MAX_ITERATIONS = 50; 
+    const MAX_ITERATIONS = 50;
 
-    while (current + duration <= endMins && iterations < MAX_ITERATIONS) {
+    while (current < endMins && iterations < MAX_ITERATIONS) {
         iterations++;
-        
-        // 1. Check if we are currently INSIDE a break or AT the start of a break
-        // We find if 'current' falls within [breakStart, breakEnd)
-        const breakAtCurrent = sortedBreaks.find(b => {
-            const bStart = timeToMinutes(b.startTime);
-            const bEnd = timeToMinutes(b.endTime);
-            return current >= bStart && current < bEnd;
-        });
 
+        // 1. Check if we match a break start exactly
+        const breakAtCurrent = breaks.find(b => b.start === current);
         if (breakAtCurrent) {
-            // Jump to the end of this break
-            current = timeToMinutes(breakAtCurrent.endTime);
+            timeline.push({
+                type: 'BREAK',
+                name: breakAtCurrent.name,
+                startTime: breakAtCurrent.start,
+                endTime: breakAtCurrent.end,
+                timeString: `${minutesToReadableTime(breakAtCurrent.start)} - ${minutesToReadableTime(breakAtCurrent.end)}`
+            });
+            current = breakAtCurrent.end;
             continue;
         }
 
-        // 2. Calculate potential slot end
         const proposedEnd = current + duration;
 
-        // 3. Check if this proposed slot [current, proposedEnd] overlaps with any break
-        // Overlap condition: SlotStart < BreakEnd && SlotEnd > BreakStart
-        const overlappingBreak = sortedBreaks.find(b => {
-            const bStart = timeToMinutes(b.startTime);
-            const bEnd = timeToMinutes(b.endTime);
-            return current < bEnd && proposedEnd > bStart;
-        });
+        // 2. Check for overlapping breaks
+        // If a break exists that starts after current time but before the proposed end time
+        const overlappingBreak = breaks.find(b => current < b.end && proposedEnd > b.start);
 
         if (overlappingBreak) {
-            // If the slot would be cut off by a break, we discard this slot
-            // and move our current pointer to the END of that break.
-            current = timeToMinutes(overlappingBreak.endTime);
-            continue;
+            // Gap detected or partial slot. 
+            // If the break starts strictly after current, we technically have a gap. 
+            // In this implementation, we skip to the break start to prioritize displaying the break.
+            if (overlappingBreak.start > current) {
+                current = overlappingBreak.start;
+                continue; // Next iteration will pick up the breakAtCurrent logic
+            } else {
+                // We are inside a break (should have been caught by breakAtCurrent if aligned)
+                // or break started before current. Jump to end of break.
+                current = overlappingBreak.end;
+                continue;
+            }
         }
 
-        // 4. Check if slot exceeds college end time
-        if (proposedEnd > endMins) {
-            break;
-        }
+        // 3. Valid Slot
+        if (proposedEnd > endMins) break;
 
-        // 5. Valid Slot - Add it
-        const startStr = minutesToReadableTime(current);
-        const endStr = minutesToReadableTime(proposedEnd);
-        slots.push(`${startStr} - ${endStr}`);
-
-        // 6. Move to next slot
-        current += duration;
+        timeline.push({
+            type: 'SLOT',
+            name: `Slot ${slotCounter}`,
+            startTime: current,
+            endTime: proposedEnd,
+            timeString: `${minutesToReadableTime(current)} - ${minutesToReadableTime(proposedEnd)}`,
+            slotIndex: slotCounter
+        });
+        
+        slotCounter++;
+        current = proposedEnd;
     }
 
-    return slots;
+    return timeline;
+};
+
+/**
+ * Generates an array of time slot strings based on settings.
+ * Now wraps generateTimeline to maintain consistency.
+ * Returns array of strings like "09:00 AM - 10:00 AM".
+ */
+export const generateTimeSlots = (settings: TimetableSettings): string[] => {
+    const timeline = generateTimeline(settings);
+    return timeline
+        .filter(item => item.type === 'SLOT')
+        .map(item => item.timeString);
 };
