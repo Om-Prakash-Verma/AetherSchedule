@@ -9,8 +9,12 @@ export const checkHealth = (): boolean => {
   return !!process.env.API_KEY;
 };
 
+// Use Gemini 3.0 Pro Preview for the primary complex reasoning tasks
 const REASONING_MODEL = "gemini-3-pro-preview";
-const CHAT_MODEL = "gemini-2.5-flash";
+
+// Use Gemini 2.5 Flash for the secondary/fallback model
+// Promoted to secondary because it has higher rate limits and handles JSON well.
+const SECONDARY_MODEL = "gemini-2.5-flash";
 
 export interface AIAnalysisResult {
   score: number;
@@ -181,7 +185,7 @@ export const chatWithScheduler = async (
       `;
 
       const response = await ai.models.generateContent({
-        model: CHAT_MODEL,
+        model: SECONDARY_MODEL, // Use Flash for chat to be snappy
         contents: message,
         config: { systemInstruction }
       });
@@ -216,6 +220,104 @@ export const generateOptimizationPlan = async (
         return null;
     }
 }
+
+/**
+ * Deterministically checks and fixes conflicts in the generated schedule.
+ * "The Repair Layer"
+ */
+const validateAndRepairSchedule = (
+    generatedEntries: ScheduleEntry[],
+    existingSchedule: ScheduleEntry[],
+    settings: TimetableSettings,
+    generatedSlots: string[]
+): ScheduleEntry[] => {
+    console.log("Starting Deterministic Repair Layer...");
+    
+    // Create a deep copy to modify
+    const repairedSchedule = [...generatedEntries];
+    
+    // Busy Matrix: Tracks usage of Rooms and Faculty for specific Day/Slot
+    // Key: `Day-Slot` -> Set of busy Resource IDs
+    const busyMatrix = new Map<string, Set<string>>();
+
+    // 1. Populate Busy Matrix from Existing Schedule (Global Context)
+    existingSchedule.forEach(entry => {
+        const key = `${entry.day}-${entry.slot}`;
+        if (!busyMatrix.has(key)) busyMatrix.set(key, new Set());
+        
+        const busySet = busyMatrix.get(key)!;
+        busySet.add(`ROOM:${entry.roomId}`);
+        (entry.facultyIds || []).forEach(fid => busySet.add(`FAC:${fid}`));
+    });
+
+    // 2. Iterate and Fix
+    for (let i = 0; i < repairedSchedule.length; i++) {
+        const entry = repairedSchedule[i];
+        let currentKey = `${entry.day}-${entry.slot}`;
+        
+        // Check for conflicts
+        // A conflict exists if ANY of the entry's resources are already in the busy set for this slot
+        
+        let isConflict = false;
+        let busySet = busyMatrix.get(currentKey);
+        
+        if (busySet) {
+             if (busySet.has(`ROOM:${entry.roomId}`)) isConflict = true;
+             (entry.facultyIds || []).forEach(fid => {
+                 if (busySet!.has(`FAC:${fid}`)) isConflict = true;
+             });
+        }
+
+        if (isConflict) {
+            console.warn(`Conflict detected for ${entry.subjectId} at ${currentKey}. Attempting repair...`);
+            
+            // Find a new slot
+            let foundSlot = false;
+            
+            // Iterate all possible slots
+            for (const day of settings.workingDays) {
+                if (foundSlot) break;
+                for (let slotIdx = 1; slotIdx <= generatedSlots.length; slotIdx++) {
+                    const candidateKey = `${day}-${slotIdx}`;
+                    
+                    // Check if candidate slot is busy
+                    const candidateBusySet = busyMatrix.get(candidateKey);
+                    let candidateHasConflict = false;
+                    
+                    if (candidateBusySet) {
+                        if (candidateBusySet.has(`ROOM:${entry.roomId}`)) candidateHasConflict = true;
+                        (entry.facultyIds || []).forEach(fid => {
+                            if (candidateBusySet.has(`FAC:${fid}`)) candidateHasConflict = true;
+                        });
+                    }
+                    
+                    if (!candidateHasConflict) {
+                        // Found a free slot! Move it.
+                        entry.day = day;
+                        entry.slot = slotIdx;
+                        foundSlot = true;
+                        console.log(`-> Moved to ${day}-${slotIdx}`);
+                        break;
+                    }
+                }
+            }
+            
+            if (!foundSlot) {
+                console.error(`CRITICAL: Could not find any valid slot for ${entry.subjectId}. Left in conflicting state.`);
+            }
+        }
+
+        // 3. Register this entry into the Busy Matrix so subsequent entries don't clash with it
+        const finalKey = `${entry.day}-${entry.slot}`;
+        if (!busyMatrix.has(finalKey)) busyMatrix.set(finalKey, new Set());
+        const finalSet = busyMatrix.get(finalKey)!;
+        
+        finalSet.add(`ROOM:${entry.roomId}`);
+        (entry.facultyIds || []).forEach(fid => finalSet.add(`FAC:${fid}`));
+    }
+    
+    return repairedSchedule;
+};
 
 /**
  * Generates a complete timetable using Gemini reasoning with fallback.
@@ -306,58 +408,63 @@ export const generateScheduleWithGemini = async (
         }
     };
 
-    // Advanced Prompt for Solving the "University Course Timetabling Problem" (UCTP)
+    // Hyper-Advanced Prompt for Solving the "University Course Timetabling Problem" (UCTP)
+    // Version 5.0: Deep Verification Mode
     const prompt = `
-        You are the engine of AetherSchedule, a world-class academic constraint solver.
-        Your task is to generate a TIMETABLE for: ${targetBatchId ? "The specific batch '" + batchesToSchedule[0].name + "'" : "ALL batches"}.
+        You are AetherSchedule's Hyper-Intelligent Constraint Solver Engine (Version 5.0).
+        Your objective is to generate a mathematically PERFECT, CONFLICT-FREE timetable for: ${targetBatchId ? "The specific batch '" + batchesToSchedule[0].name + "'" : "ALL batches"}.
 
-        *** TIMETABLE STRUCTURE & BREAKS ***
-        The institution follows a specific time structure:
-        - Class Duration: ${settings.periodDuration} minutes.
-        - Start: ${settings.collegeStartTime}, End: ${settings.collegeEndTime}.
-        - Breaks: ${JSON.stringify(settings.breaks.map(b => `${b.name} (${b.startTime}-${b.endTime})`))}.
-        - Available Slots: ${JSON.stringify(slots)}.
-        
-        The 'slot' output field corresponds to the 1-based index of the 'Available Slots' array.
-        (e.g., Slot 1 = ${slots[0]}, Slot 2 = ${slots[1]}).
-        Do not schedule classes during break times (breaks are typically already excluded from the 'Available Slots' list, but be aware of the gap).
+        *** EXECUTION PROTOCOL: DEEP VERIFICATION (TAKE YOUR TIME) ***
+        1. Accuracy is the ONLY metric. Do not rush.
+        2. For every single class you attempt to place, you MUST perform a "Virtual Collision Check" against the 'busySlots' list.
+        3. If 'busySlots' says Room R is taken on Mon-1, you CANNOT place another class in Room R on Mon-1.
+        4. If you encounter a deadlock (no slots left), you MUST BACKTRACK and move a previous class to free up space. Simulate a backtracking algorithm.
 
-        *** CRITICAL INSTRUCTION: STRICT TEACHER ASSIGNMENT ***
-        For a given Batch and Subject, you MUST schedule ALL the faculty members listed in 'assignedFacultyIds' for that slot.
-        The output must contain an array of faculty IDs, not just one.
+        *** PHASE 1: TEMPORAL TOPOLOGY ***
+        - Class Duration: ${settings.periodDuration} min.
+        - Working Days: ${JSON.stringify(days)}.
+        - Valid Slot Indices: 1 to ${slots.length}.
+        - Breaks: ${JSON.stringify(settings.breaks.map(b => `${b.name}`))} (Absolute No-Fly Zones).
 
-        *** CRITICAL INSTRUCTION: FIXED ROOM ASSIGNMENT ***
-        If a Batch has a 'fixedRoomId', you MUST schedule all its 'LECTURE' type subjects in that specific Room. 
-        'LAB' subjects should still go to a Room with type='LAB'.
+        *** PHASE 2: THE "BUSY MASK" (GLOBAL CONFLICTS) ***
+        You are provided with 'busySlots'. This represents the spacetime coordinates already occupied by the rest of the universe.
+        CRITICAL RULE: If {Day: D, Slot: S} contains RoomID: R or FacultyID: F in 'busySlots', you CANNOT place them there. 
+        Treat this as a hard boundary condition.
 
-        *** CRITICAL INSTRUCTION: GLOBAL CONFLICT AWARENESS ***
-        You are provided with a list of 'busySlots' (from other batches). 
-        You MUST NOT assign a Faculty member or Room if they appear in 'busySlots' for that specific Day & Slot.
-        
-        Also, within the schedule you are currently generating:
-        - Faculty 'F1' cannot teach Batch 'B1' and Batch 'B2' at the same time.
-        - Room 'R1' cannot host Batch 'B1' and Batch 'B2' at the same time.
-        - Batch 'B1' cannot have two classes at the same time.
+        *** PHASE 3: ALGORITHMIC EXECUTION STEPS ***
+        Execute this prioritized heuristic strategy:
 
-        INPUT DATA:
+        1.  **Priority 1: The "Big Rocks" (Labs & Practicals)**
+            -   Identify subjects where 'requiredRoomType' == 'LAB'.
+            -   These MUST be scheduled as **consecutive blocks** (e.g., Slot 1-2 or 3-4) on the same day.
+            -   Optimization: Place these on days with fewer existing global conflicts.
+            -   Action: Assign ALL 'assignedFacultyIds' to these slots.
+
+        2.  **Priority 2: Fixed Constraints (Anchors)**
+            -   Batches with 'fixedRoomId' MUST use that room for all LECTURE subjects.
+            -   Subjects with specific 'assignedFacultyIds' MUST use those exact teachers.
+
+        3.  **Priority 3: Intelligent Distribution (Lectures)**
+            -   **Pattern Matching**: For a subject with 3 lectures/week, prefer an "Every Other Day" pattern (e.g., Mon-Wed-Fri or Tue-Thu-Sat).
+            -   **Slot Variance**: Never schedule the same subject at the same time slot every day. Rotate them (Morning vs Afternoon).
+            -   **Load Balancing**: Distribute the total daily workload evenly. Avoid creating a "Hell Day" with 8 hours while another day has 2.
+
+        4.  **Priority 4: Gap Minimization (Student Experience)**
+            -   Minimize "Swiss Cheese" schedules (1-hour gaps between classes). 
+            -   Group lectures into contiguous blocks of 2-3 hours.
+
+        *** STRICT VALIDATION RULES (ZERO TOLERANCE) ***
+        1.  **Double Booking**: A Faculty or Room cannot exist in two places at once (Check against Internal Schedule AND 'busySlots').
+        2.  **Completeness**: Total slots generated for Subject X must EXACTLY equal 'lecturesPerWeek'.
+        3.  **Room Suitability**: LAB subjects go to LAB rooms. LECTURE subjects go to LECTURE rooms.
+        4.  **Daily Uniqueness**: A Batch cannot have the same Subject (Lecture) twice in one day (unless it is a Lab).
+
+        *** INPUT DATA ***
         ${JSON.stringify(inputData)}
 
-        STRICT CONSTRAINTS (Violating these results in failure):
-        1. **Conflict Free**: No double booking of Faculty, Rooms, or Batches (check both internal generation AND external 'busySlots').
-        2. **Room Capacity**: Room capacity must be >= Batch size.
-        3. **Room Type**: If subject requires 'LAB', it MUST be in a room with type 'LAB'.
-        4. **Distribution Constraint**: For 'LECTURE' type subjects, you MUST NOT schedule more than 1 lecture of the same subject on the same day. Spread them across different days.
-           EXCEPTION: 'LAB' type subjects SHOULD be scheduled consecutively on the same day.
-
-        OPTIMIZATION GOALS:
-        1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back) on the SAME day.
-        2. **Teacher Fatigue**: Avoid scheduling the same faculty member for more than 4 consecutive slots.
-        3. **Completeness**: You MUST schedule exactly 'lecturesPerWeek' slots for EVERY subject for the target batch(es).
-        4. **Slot Variance**: For a specific subject (e.g., Math), try to schedule it at different times on different days (e.g., Mon Slot 1, Tue Slot 3) rather than always in the same slot.
-
-        OUTPUT FORMAT:
-        Return a JSON Array of objects. Each object represents one class assignment.
-        Fields: day (string), slot (1-based int), subjectId, facultyIds (array of strings), roomId, batchId.
+        *** OUTPUT ***
+        Return strictly a JSON Array of schedule objects.
+        [{ "day": "Mon", "slot": 1, "subjectId": "...", "facultyIds": ["..."], "roomId": "...", "batchId": "..." }]
     `;
 
     const responseSchema: Schema = {
@@ -376,8 +483,11 @@ export const generateScheduleWithGemini = async (
         }
     };
 
+    let rawSchedule: any[] = [];
+
+    // Attempt 1: Gemini 3.0 Pro (Reasoning)
     try {
-        console.log(`Starting ${targetBatchId ? 'Single Batch' : 'Master'} Constraint Solver (Gemini 3.0 Pro)...`);
+        console.log(`[Attempt 1] Starting Advanced Constraint Solver (${REASONING_MODEL})...`);
         const response = await ai.models.generateContent({
             model: REASONING_MODEL,
             contents: prompt,
@@ -386,32 +496,43 @@ export const generateScheduleWithGemini = async (
                 responseSchema: responseSchema
             }
         });
+        rawSchedule = JSON.parse(response.text || "[]");
 
-        const rawData = JSON.parse(response.text || "[]");
-        return processGeneratedSchedule(rawData);
-
-    } catch (primaryError) {
-        console.warn("Reasoning model busy. Falling back to Flash model (Optimization quality may decrease)...", primaryError);
+    } catch (primaryError: any) {
+        console.warn(`[Attempt 1 Failed] ${REASONING_MODEL} busy/quota. Falling back to Secondary model...`, primaryError);
         
+        // Attempt 2: Gemini 2.5 Flash (High Availability)
+        // We use Flash as the immediate backup because it has higher limits than other Pro models.
         try {
-            // Fallback to Flash model
+            console.log(`[Attempt 2] Starting Constraint Solver (${SECONDARY_MODEL})...`);
             const response = await ai.models.generateContent({
-                model: CHAT_MODEL,
+                model: SECONDARY_MODEL,
                 contents: prompt,
                 config: {
                     responseMimeType: "application/json",
                     responseSchema: responseSchema
                 }
             });
+            rawSchedule = JSON.parse(response.text || "[]");
 
-            const rawData = JSON.parse(response.text || "[]");
-            return processGeneratedSchedule(rawData);
-
-        } catch (fallbackError) {
-             console.error("Critical Failure: Both AI models failed to solve the schedule.", fallbackError);
+        } catch (secondaryError: any) {
+             console.error("Critical Failure: Both AI models failed.", secondaryError);
+             
+             if (primaryError?.status === 429 || secondaryError?.status === 429) {
+                 throw new Error("AI Service Busy (Rate Limit Exceeded). Please wait 30 seconds and try again.");
+             }
              throw new Error("Failed to generate schedule. Please check data validity and try again.");
         }
     }
+
+    // Process raw schedule into proper objects
+    let processedSchedule = processGeneratedSchedule(rawSchedule);
+
+    // Run Deterministic Repair to ensure conflict-free result
+    // We pass the existing schedule so it can check against global constraints
+    processedSchedule = validateAndRepairSchedule(processedSchedule, existingSchedule || [], settings, generatedSlots);
+
+    return processedSchedule;
 };
 
 /**

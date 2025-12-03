@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion } from '../types';
 import { db, auth } from '../services/firebase';
@@ -185,48 +186,86 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     };
   }, []);
 
-  // Conflict detection
+  // Enhanced Conflict Detection
   const checkConflicts = () => {
     const newConflicts: ScheduleConflict[] = [];
-    schedule.forEach((entry1, idx) => {
-      schedule.forEach((entry2, idx2) => {
-        if (idx >= idx2) return;
-        if (entry1.day === entry2.day && entry1.slot === entry2.slot) {
-          // Room Conflict
-          if (entry1.roomId === entry2.roomId) {
+    
+    // 1. Capacity Checks (Individual Entry)
+    // Check if assigned room is large enough for the batch
+    schedule.forEach(entry => {
+        const batch = batches.find(b => b.id === entry.batchId);
+        const room = rooms.find(r => r.id === entry.roomId);
+        
+        if (batch && room && batch.size > room.capacity) {
             newConflicts.push({
-              type: 'ROOM',
-              description: `Room ${rooms.find(r => r.id === entry1.roomId)?.name || 'Unknown'} double booked`,
-              involvedIds: [entry1.id, entry2.id]
+                type: 'CAPACITY',
+                description: `Room Capacity Issue: ${room.name} (${room.capacity}) is too small for ${batch.name} (${batch.size} students)`,
+                involvedIds: [entry.id]
             });
-          }
-          
-          // Faculty Conflict (Handle arrays of faculty)
-          const f1s = entry1.facultyIds || [];
-          const f2s = entry2.facultyIds || [];
-          
-          // Check intersection of faculty arrays
-          const overlappingFaculty = f1s.filter(fId => f2s.includes(fId));
-          
-          if (overlappingFaculty.length > 0) {
-            const fName = faculty.find(f => f.id === overlappingFaculty[0])?.name || 'Unknown';
-            newConflicts.push({
-              type: 'FACULTY',
-              description: `Faculty ${fName} double booked`,
-              involvedIds: [entry1.id, entry2.id]
-            });
-          }
-
-          if (entry1.batchId === entry2.batchId) {
-             newConflicts.push({
-              type: 'BATCH',
-              description: `Batch ${batches.find(b => b.id === entry1.batchId)?.name || 'Unknown'} clash`,
-              involvedIds: [entry1.id, entry2.id]
-            });
-          }
         }
-      });
     });
+
+    // 2. Overlap Checks (Group by Day-Slot for O(N) efficiency instead of O(N^2))
+    const slotMap = new Map<string, ScheduleEntry[]>();
+    
+    schedule.forEach(entry => {
+        const key = `${entry.day}-${entry.slot}`;
+        if (!slotMap.has(key)) slotMap.set(key, []);
+        slotMap.get(key)?.push(entry);
+    });
+
+    slotMap.forEach((entriesInSlot, key) => {
+        if (entriesInSlot.length < 2) return;
+
+        // Compare every pair ONLY within this specific time slot
+        for (let i = 0; i < entriesInSlot.length; i++) {
+            for (let j = i + 1; j < entriesInSlot.length; j++) {
+                const entry1 = entriesInSlot[i];
+                const entry2 = entriesInSlot[j];
+
+                // A. Room Conflict
+                if (entry1.roomId === entry2.roomId) {
+                    const roomName = rooms.find(r => r.id === entry1.roomId)?.name || 'Unknown Room';
+                    const b1 = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown';
+                    const b2 = batches.find(b => b.id === entry2.batchId)?.name || 'Unknown';
+                    
+                    newConflicts.push({
+                        type: 'ROOM',
+                        description: `Room ${roomName} double booked (${b1} vs ${b2})`,
+                        involvedIds: [entry1.id, entry2.id]
+                    });
+                }
+                
+                // B. Faculty Conflict (Intersection check for arrays)
+                const f1s = entry1.facultyIds || [];
+                const f2s = entry2.facultyIds || [];
+                const overlappingFaculty = f1s.filter(fId => f2s.includes(fId));
+                
+                if (overlappingFaculty.length > 0) {
+                    const fNames = overlappingFaculty.map(fid => faculty.find(f => f.id === fid)?.name).filter(Boolean).join(', ');
+                    const b1 = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown';
+                    const b2 = batches.find(b => b.id === entry2.batchId)?.name || 'Unknown';
+
+                    newConflicts.push({
+                        type: 'FACULTY',
+                        description: `Faculty ${fNames || 'Unknown'} double booked (${b1} vs ${b2})`,
+                        involvedIds: [entry1.id, entry2.id]
+                    });
+                }
+
+                // C. Batch Conflict (Batch cannot be in two places at once)
+                if (entry1.batchId === entry2.batchId) {
+                     const bName = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown Batch';
+                     newConflicts.push({
+                        type: 'BATCH',
+                        description: `Batch ${bName} has concurrent classes scheduled`,
+                        involvedIds: [entry1.id, entry2.id]
+                    });
+                }
+            }
+        }
+    });
+
     setConflicts(newConflicts);
   };
 
