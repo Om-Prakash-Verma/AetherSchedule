@@ -1,6 +1,5 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings } from '../types';
+import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion } from '../types';
 import { db, auth } from '../services/firebase';
 import { 
     collection, 
@@ -12,8 +11,10 @@ import {
     writeBatch, 
     getDocs,
     query,
+    where,
     QuerySnapshot,
-    DocumentData
+    DocumentData,
+    orderBy
 } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { generateTimeSlots } from '../core/TimeUtils';
@@ -39,6 +40,7 @@ interface StoreState {
   conflicts: ScheduleConflict[];
   settings: TimetableSettings;
   generatedSlots: string[]; // Computed from settings
+  versions: ScheduleVersion[]; // Version History
   
   addScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
   updateScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
@@ -66,7 +68,13 @@ interface StoreState {
   
   checkConflicts: () => void;
   resetData: () => void;
-  saveGeneratedSchedule: (newSchedule: ScheduleEntry[]) => Promise<void>;
+  saveGeneratedSchedule: (newSchedule: ScheduleEntry[], targetBatchId?: string) => Promise<void>;
+  
+  // Version Control
+  saveVersion: (name: string) => Promise<void>;
+  restoreVersion: (versionId: string) => Promise<void>;
+  deleteVersion: (versionId: string) => Promise<void>;
+
   loading: boolean;
 }
 
@@ -81,6 +89,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
   const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [settings, setSettings] = useState<TimetableSettings>(DEFAULT_SETTINGS);
+  const [versions, setVersions] = useState<ScheduleVersion[]>([]);
   
   const [loading, setLoading] = useState(true);
 
@@ -88,11 +97,18 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const generatedSlots = React.useMemo(() => generateTimeSlots(settings), [settings]);
 
   // Helper to subscribe to a collection with error handling
-  const subscribe = (collectionName: string, setter: Function) => {
+  const subscribe = (collectionName: string, setter: Function, ordered = false) => {
     const firestore = db;
     if (!firestore) return () => {};
     
-    return onSnapshot(collection(firestore, collectionName), 
+    let q;
+    if (ordered) {
+        q = query(collection(firestore, collectionName), orderBy('createdAt', 'desc'));
+    } else {
+        q = collection(firestore, collectionName);
+    }
+
+    return onSnapshot(q, 
       (snapshot: QuerySnapshot<DocumentData>) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         setter(data);
@@ -117,6 +133,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let unsubDepartments: () => void;
     let unsubSchedule: () => void;
     let unsubSettings: () => void;
+    let unsubVersions: () => void;
 
     const setupListeners = () => {
         unsubFaculty = subscribe('faculty', setFaculty);
@@ -125,6 +142,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         unsubBatches = subscribe('batches', setBatches);
         unsubDepartments = subscribe('departments', setDepartments);
         unsubSchedule = subscribe('schedule', setSchedule);
+        unsubVersions = subscribe('schedule_versions', setVersions, true);
         
         // Settings listener (expecting a single doc 'config' in 'settings' collection)
         unsubSettings = onSnapshot(doc(firestore, 'settings', 'config'), (docSnap) => {
@@ -163,6 +181,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (unsubDepartments) unsubDepartments();
         if (unsubSchedule) unsubSchedule();
         if (unsubSettings) unsubSettings();
+        if (unsubVersions) unsubVersions();
     };
   }, []);
 
@@ -416,15 +435,33 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }
 
   // Bulk save generated schedule using batched writes
-  const saveGeneratedSchedule = async (newSchedule: ScheduleEntry[]) => {
+  // supports targetBatchId for partial updates
+  const saveGeneratedSchedule = async (newSchedule: ScheduleEntry[], targetBatchId?: string) => {
       setLoading(true);
-      setSchedule(newSchedule); // Optimistic update
+      
+      // 1. Optimistic Update
+      if (targetBatchId) {
+          // Remove old entries for this batch, add new ones, keep others
+          setSchedule(prev => [
+              ...prev.filter(s => s.batchId !== targetBatchId), 
+              ...newSchedule
+          ]);
+      } else {
+          // Replace everything
+          setSchedule(newSchedule);
+      }
 
       if (db) {
           const firestore = db;
           try {
-              // 1. Delete all existing schedule entries
-              const q = query(collection(firestore, 'schedule'));
+              // 2. Identify what to delete
+              let q;
+              if (targetBatchId) {
+                  q = query(collection(firestore, 'schedule'), where('batchId', '==', targetBatchId));
+              } else {
+                  q = query(collection(firestore, 'schedule'));
+              }
+              
               const snapshot = await getDocs(q);
               
               // Firestore batch limit is 500 operations
@@ -442,9 +479,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   await batch.commit();
               }
               
-              console.log("Cleared existing schedule.");
+              console.log(targetBatchId ? `Cleared existing schedule for batch ${targetBatchId}` : "Cleared master schedule.");
 
-              // 2. Write new schedule in chunks
+              // 3. Write new schedule in chunks
               const writeChunks = [];
               for (let i = 0; i < newSchedule.length; i += CHUNK_SIZE) {
                   writeChunks.push(newSchedule.slice(i, i + CHUNK_SIZE));
@@ -473,14 +510,59 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
   }
 
+  // Version Control Methods
+  const saveVersion = async (name: string) => {
+      if (!db) {
+          alert("Cannot save versions in offline mode.");
+          return;
+      }
+      
+      try {
+          setLoading(true);
+          const versionId = Math.random().toString(36).substr(2, 9);
+          const newVersion: ScheduleVersion = {
+              id: versionId,
+              name,
+              createdAt: new Date().toISOString(),
+              entries: schedule
+          };
+          
+          await setDoc(doc(db, 'schedule_versions', versionId), newVersion);
+          setVersions(prev => [newVersion, ...prev]);
+          console.log("Version saved:", name);
+      } catch (e) {
+          console.error("Failed to save version:", e);
+          alert("Failed to save version.");
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const restoreVersion = async (versionId: string) => {
+      const version = versions.find(v => v.id === versionId);
+      if (!version) return;
+      
+      if (confirm(`Are you sure you want to restore "${version.name}"? This will overwrite the current live schedule.`)) {
+          // Full restore implies wiping everything and replacing, so no targetBatchId
+          await saveGeneratedSchedule(version.entries);
+      }
+  };
+
+  const deleteVersion = async (versionId: string) => {
+      if (confirm("Are you sure you want to delete this saved version?")) {
+          await deleteFromCollection('schedule_versions', versionId, setVersions);
+      }
+  };
+
   return (
     <StoreContext.Provider value={{
-      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots,
+      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots, versions,
       addScheduleEntry, updateScheduleEntry, deleteScheduleEntry, checkConflicts, resetData, saveGeneratedSchedule, loading,
       addFaculty, addRoom, addSubject, addBatch, addDepartment,
       updateFaculty, updateRoom, updateSubject, updateBatch, updateDepartment,
       deleteFaculty, deleteRoom, deleteSubject, deleteBatch, deleteDepartment,
-      updateSettings
+      updateSettings,
+      saveVersion, restoreVersion, deleteVersion
     }}>
       {children}
     </StoreContext.Provider>

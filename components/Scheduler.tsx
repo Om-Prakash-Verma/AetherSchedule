@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleEntry } from '../types';
-import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2 } from 'lucide-react';
+import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
 import { chatWithScheduler, generateScheduleWithGemini } from '../services/geminiService';
 
@@ -9,19 +9,38 @@ const Scheduler = () => {
     const { 
         schedule, faculty, rooms, batches, subjects, conflicts, 
         addScheduleEntry, deleteScheduleEntry, resetData, saveGeneratedSchedule,
-        settings, generatedSlots 
+        settings, generatedSlots,
+        versions, saveVersion, restoreVersion, deleteVersion, loading
     } = useStore();
     
     const [selectedBatchId, setSelectedBatchId] = useState<string>(batches[0]?.id || '');
-    const [draggedItem, setDraggedItem] = useState<{subjectId: string, type: 'NEW'} | null>(null);
     const [aiChatOpen, setAiChatOpen] = useState(false);
     const [aiMessage, setAiMessage] = useState("");
     const [aiResponse, setAiResponse] = useState("");
     const [aiLoading, setAiLoading] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+    const [elapsedTime, setElapsedTime] = useState(0);
+
+    // Version Modal State
+    const [versionModalOpen, setVersionModalOpen] = useState(false);
+    const [newVersionName, setNewVersionName] = useState("");
 
     // Filter schedule for the view
     const currentSchedule = schedule.filter(s => s.batchId === selectedBatchId);
+
+    // Timer for generation feedback
+    useEffect(() => {
+        let interval: any;
+        if (isGenerating) {
+            setElapsedTime(0);
+            interval = setInterval(() => {
+                setElapsedTime(prev => prev + 1);
+            }, 1000);
+        } else {
+            setElapsedTime(0);
+        }
+        return () => clearInterval(interval);
+    }, [isGenerating]);
 
     const getCellContent = (day: string, slotIndex: number) => {
         // Slot is 1-indexed in database, so we pass index + 1
@@ -78,11 +97,20 @@ const Scheduler = () => {
             return;
         }
 
+        if (!selectedBatchId) {
+             alert("Please select a specific batch to generate for.");
+             return;
+        }
+
         setIsGenerating(true);
 
         try {
-            console.log("Requesting schedule from Gemini...");
+            console.log(`Requesting schedule for Batch ID: ${selectedBatchId}...`);
             
+            // Get the schedule of OTHER batches to use as a "Busy Mask"
+            // This prevents the AI from double-booking teachers/rooms that are already taken by other batches
+            const otherBatchesSchedule = schedule.filter(s => s.batchId !== selectedBatchId);
+
             // Call Gemini Service
             const newEntries = await generateScheduleWithGemini(
                 batches, 
@@ -90,11 +118,15 @@ const Scheduler = () => {
                 faculty, 
                 rooms, 
                 settings, 
-                generatedSlots
+                generatedSlots,
+                selectedBatchId, // Target Batch
+                otherBatchesSchedule // Existing Constraint Context
             );
 
-            console.log("Gemini returned", newEntries.length, "entries.");
-            await saveGeneratedSchedule(newEntries);
+            console.log("Gemini returned", newEntries.length, "entries for this batch.");
+            
+            // Save only for this batch, preserving others
+            await saveGeneratedSchedule(newEntries, selectedBatchId);
             
         } catch (error) {
             console.error("Generation failed:", error);
@@ -103,6 +135,12 @@ const Scheduler = () => {
             setIsGenerating(false);
         }
     };
+
+    const handleSaveVersion = async () => {
+        if (!newVersionName.trim()) return;
+        await saveVersion(newVersionName);
+        setNewVersionName("");
+    }
 
     const safeWorkingDays = (settings.workingDays || []);
     // Fallback if settings aren't loaded yet
@@ -125,13 +163,37 @@ const Scheduler = () => {
                     </select>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+                    {/* Version Control Button */}
+                    <button 
+                        onClick={() => setVersionModalOpen(true)}
+                        className="flex-1 sm:flex-none justify-center bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors whitespace-nowrap"
+                        title="Version History"
+                    >
+                        <History size={16} />
+                        Versions
+                    </button>
+
                     <button 
                         onClick={handleGenerate}
-                        disabled={isGenerating}
-                        className="flex-1 sm:flex-none justify-center bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-all shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                        disabled={isGenerating || !selectedBatchId}
+                        className={clsx(
+                            "flex-1 sm:flex-none justify-center px-4 py-2 rounded-lg flex items-center gap-2 transition-all whitespace-nowrap shadow-lg",
+                            isGenerating 
+                                ? "bg-slate-800 border border-emerald-500/30 text-emerald-400 cursor-wait shadow-none" 
+                                : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                        )}
                     >
-                        {isGenerating ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                        {isGenerating ? "Gemini Auto-Schedule" : "Gemini Auto-Schedule"}
+                        {isGenerating ? (
+                            <>
+                                <Loader2 size={18} className="animate-spin" />
+                                <span className="animate-pulse font-medium">Generating... {elapsedTime}s</span>
+                            </>
+                        ) : (
+                            <>
+                                <Sparkles size={18} />
+                                <span>Auto-Schedule Batch</span>
+                            </>
+                        )}
                     </button>
 
                     <button 
@@ -150,6 +212,84 @@ const Scheduler = () => {
                     </button>
                 </div>
             </div>
+
+            {/* Version History Modal */}
+            {versionModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-slate-900 border border-glassBorder rounded-2xl w-full max-w-lg shadow-2xl p-6 relative max-h-[80vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                                <History size={20} className="text-primary" />
+                                Version History
+                            </h3>
+                            <button onClick={() => setVersionModalOpen(false)} className="text-slate-500 hover:text-white">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Save New Version */}
+                        <div className="mb-6 p-4 bg-slate-800/50 rounded-xl border border-slate-700">
+                            <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Save Current State</label>
+                            <div className="flex gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="Version Name (e.g. Draft 1)" 
+                                    value={newVersionName}
+                                    onChange={(e) => setNewVersionName(e.target.value)}
+                                    className="flex-1 bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-white focus:ring-primary focus:border-primary text-sm"
+                                />
+                                <button 
+                                    onClick={handleSaveVersion}
+                                    disabled={loading || !newVersionName}
+                                    className="px-4 py-2 bg-primary hover:bg-indigo-500 text-white rounded-lg flex items-center gap-2 disabled:opacity-50 transition-colors"
+                                >
+                                    <Save size={16} />
+                                    Save
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* List Versions */}
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+                            <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Previous Versions</label>
+                            {versions.length === 0 ? (
+                                <div className="text-center py-8 text-slate-500 text-sm">No saved versions found.</div>
+                            ) : (
+                                versions.map(v => (
+                                    <div key={v.id} className="flex items-center justify-between p-3 bg-slate-800/30 border border-slate-700 rounded-lg hover:border-slate-500 transition-colors group">
+                                        <div>
+                                            <p className="font-medium text-white">{v.name}</p>
+                                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                                                <Clock size={12} />
+                                                {new Date(v.createdAt).toLocaleString()}
+                                                <span className="bg-slate-700 px-1.5 py-0.5 rounded text-[10px]">
+                                                    {v.entries.length} entries
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => restoreVersion(v.id)}
+                                                className="p-2 text-emerald-400 hover:bg-emerald-400/10 rounded-lg transition-colors"
+                                                title="Restore this version"
+                                            >
+                                                <RotateCcw size={16} />
+                                            </button>
+                                            <button 
+                                                onClick={() => deleteVersion(v.id)}
+                                                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                                                title="Delete version"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* AI Command Bar Overlay */}
             {aiChatOpen && (

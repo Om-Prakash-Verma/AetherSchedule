@@ -219,6 +219,7 @@ export const generateOptimizationPlan = async (
 
 /**
  * Generates a complete timetable using Gemini reasoning with fallback.
+ * Can generate for ALL batches (master schedule) or ONE batch (partial) while respecting constraints.
  */
 export const generateScheduleWithGemini = async (
     batches: Batch[],
@@ -226,21 +227,40 @@ export const generateScheduleWithGemini = async (
     faculty: Faculty[],
     rooms: Room[],
     settings: TimetableSettings,
-    generatedSlots: string[]
+    generatedSlots: string[],
+    targetBatchId?: string, // NEW: If provided, only generate for this batch
+    existingSchedule?: ScheduleEntry[] // NEW: Used as a "Busy Mask" for other batches
 ): Promise<ScheduleEntry[]> => {
     if (!process.env.API_KEY) throw new Error("Gemini API Key missing");
 
-    // Prepare clean batches with EXPLICIT assignments
-    const cleanBatches = batches.map(b => ({ 
+    // 1. Filter Batches: If targetBatchId is set, only send that batch to the AI
+    const batchesToSchedule = targetBatchId 
+        ? batches.filter(b => b.id === targetBatchId) 
+        : batches;
+
+    if (batchesToSchedule.length === 0) {
+        throw new Error("No batch found to schedule.");
+    }
+
+    // 2. Prepare clean batches with EXPLICIT assignments
+    const cleanBatches = batchesToSchedule.map(b => ({ 
         id: b.id, 
         name: b.name, 
         size: b.size,
-        fixedRoomId: b.fixedRoomId, // Pass fixed room to AI
-        // Send array of assigned faculty IDs
+        fixedRoomId: b.fixedRoomId,
         assignments: (b.subjectAssignments || []).map(a => ({
             subjectId: a.subjectId,
             assignedFacultyIds: a.facultyIds 
         }))
+    }));
+
+    // 3. Prepare Constraints from Existing Schedule (The "Busy Mask")
+    // If we are scheduling one batch, we must know what rooms/teachers are taken by OTHER batches.
+    const busySlots = (existingSchedule || []).map(entry => ({
+        day: entry.day,
+        slot: entry.slot,
+        occupiedRoomId: entry.roomId,
+        occupiedFacultyIds: entry.facultyIds || []
     }));
 
     const cleanSubjects = subjects.map(s => ({ 
@@ -251,7 +271,6 @@ export const generateScheduleWithGemini = async (
         lecturesPerWeek: s.lecturesPerWeek || s.credits || 3 
     }));
     
-    // Faculty list mostly for reference of names/constraints
     const cleanFaculty = faculty.map(f => ({ id: f.id, name: f.name }));
     const cleanRooms = rooms.map(r => ({ id: r.id, name: r.name, type: r.type, capacity: r.capacity }));
     
@@ -260,10 +279,14 @@ export const generateScheduleWithGemini = async (
     const totalSlotsPerDay = slots.length;
 
     const inputData = {
+        targetMode: targetBatchId ? "SINGLE_BATCH" : "ALL_BATCHES",
+        targetBatchName: targetBatchId ? batchesToSchedule[0].name : "All",
         batches: cleanBatches,
         subjects: cleanSubjects,
         faculty: cleanFaculty,
         rooms: cleanRooms,
+        existingConflicts: busySlots.length > 0 ? "See 'busySlots' field" : "None",
+        busySlots: busySlots, // AI must check this list
         config: {
             days,
             slots,
@@ -274,10 +297,9 @@ export const generateScheduleWithGemini = async (
     // Advanced Prompt for Solving the "University Course Timetabling Problem" (UCTP)
     const prompt = `
         You are the engine of AetherSchedule, a world-class academic constraint solver.
-        Your task is to generate a MASTER TIMETABLE for ALL batches simultaneously.
+        Your task is to generate a TIMETABLE for: ${targetBatchId ? "The specific batch '" + batchesToSchedule[0].name + "'" : "ALL batches"}.
 
         *** CRITICAL INSTRUCTION: STRICT TEACHER ASSIGNMENT ***
-        You must use the 'assignments' array within each Batch object. 
         For a given Batch and Subject, you MUST schedule ALL the faculty members listed in 'assignedFacultyIds' for that slot.
         The output must contain an array of faculty IDs, not just one.
 
@@ -286,24 +308,26 @@ export const generateScheduleWithGemini = async (
         'LAB' subjects should still go to a Room with type='LAB'.
 
         *** CRITICAL INSTRUCTION: GLOBAL CONFLICT AWARENESS ***
-        You must ensure that any Faculty member or Room is NEVER assigned to two different Batches at the same Day & Slot.
-        You must maintain a global state of resource usage in your reasoning.
+        You are provided with a list of 'busySlots' (from other batches). 
+        You MUST NOT assign a Faculty member or Room if they appear in 'busySlots' for that specific Day & Slot.
+        
+        Also, within the schedule you are currently generating:
+        - Faculty 'F1' cannot teach Batch 'B1' and Batch 'B2' at the same time.
+        - Room 'R1' cannot host Batch 'B1' and Batch 'B2' at the same time.
+        - Batch 'B1' cannot have two classes at the same time.
 
         INPUT DATA:
         ${JSON.stringify(inputData)}
 
         STRICT CONSTRAINTS (Violating these results in failure):
-        1. **Global Faculty Conflict**: Faculty 'F1' cannot teach Batch 'B1' and Batch 'B2' at the same time.
-        2. **Global Room Conflict**: Room 'R1' cannot host Batch 'B1' and Batch 'B2' at the same time.
-        3. **Batch Conflict**: Batch 'B1' cannot have two classes at the same time.
-        4. **Room Capacity**: Room capacity must be >= Batch size.
-        5. **Room Type**: If subject requires 'LAB', it MUST be in a room with type 'LAB'. If 'LECTURE', use 'LECTURE' (or the Batch's fixedRoomId if set).
+        1. **Conflict Free**: No double booking of Faculty, Rooms, or Batches (check both internal generation AND external 'busySlots').
+        2. **Room Capacity**: Room capacity must be >= Batch size.
+        3. **Room Type**: If subject requires 'LAB', it MUST be in a room with type 'LAB'.
 
-        OPTIMIZATION GOALS (Solve these common timetabling problems):
-        1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back) in the same day if possible. e.g., Slot 1 & 2.
-        2. **Teacher Fatigue**: Avoid scheduling the same faculty member for more than 4 consecutive slots without a break.
-        3. **Distribution**: Do NOT schedule the same Subject (Lecture) multiple times on the same day for a Batch (unless it's a Lab). Spread them across the week.
-        4. **Completeness**: You MUST schedule exactly 'lecturesPerWeek' slots for EVERY subject for EVERY batch.
+        OPTIMIZATION GOALS:
+        1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back).
+        2. **Teacher Fatigue**: Avoid scheduling the same faculty member for more than 4 consecutive slots.
+        3. **Completeness**: You MUST schedule exactly 'lecturesPerWeek' slots for EVERY subject for the target batch(es).
 
         OUTPUT FORMAT:
         Return a JSON Array of objects. Each object represents one class assignment.
@@ -318,7 +342,7 @@ export const generateScheduleWithGemini = async (
                 day: { type: Type.STRING },
                 slot: { type: Type.INTEGER },
                 subjectId: { type: Type.STRING },
-                facultyIds: { type: Type.ARRAY, items: { type: Type.STRING } }, // Changed to array
+                facultyIds: { type: Type.ARRAY, items: { type: Type.STRING } },
                 roomId: { type: Type.STRING },
                 batchId: { type: Type.STRING },
             },
@@ -327,7 +351,7 @@ export const generateScheduleWithGemini = async (
     };
 
     try {
-        console.log("Starting Global Constraint Solver (Gemini 3.0 Pro)...");
+        console.log(`Starting ${targetBatchId ? 'Single Batch' : 'Master'} Constraint Solver (Gemini 3.0 Pro)...`);
         const response = await ai.models.generateContent({
             model: REASONING_MODEL,
             contents: prompt,

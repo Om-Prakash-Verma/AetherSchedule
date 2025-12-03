@@ -1,4 +1,5 @@
 
+
 export enum ResourceType {
   FACULTY = 'FACULTY',
   ROOM = 'ROOM',
@@ -93,6 +94,15 @@ export interface TimetableSettings {
     periodDuration: number;   // minutes, e.g., 60
     workingDays: string[];    // ["Mon", "Tue", "Wed", "Thu", "Fri"]
     breaks: Break[];
+}
+
+// --- Version Control Types ---
+
+export interface ScheduleVersion {
+    id: string;
+    name: string;
+    createdAt: string; // ISO Date String
+    entries: ScheduleEntry[];
 }
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
