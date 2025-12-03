@@ -382,7 +382,8 @@ const Scheduler = () => {
                                             const ids = (entry.facultyIds || []);
                                             return ids.map(id => {
                                                 const f = faculty.find(fac => fac.id === id);
-                                                return f ? f.name.split(' ').pop() : 'Unknown';
+                                                // Removed .split(' ').pop() to show full name
+                                                return f ? f.name : 'Unknown';
                                             }).join(', ');
                                         };
 

@@ -353,6 +353,7 @@ export const generateScheduleWithGemini = async (
         1. **The Lab Problem**: If a subject has 'requiredRoomType' == 'LAB', schedule its 'lecturesPerWeek' as CONSECUTIVE slots (back-to-back) on the SAME day.
         2. **Teacher Fatigue**: Avoid scheduling the same faculty member for more than 4 consecutive slots.
         3. **Completeness**: You MUST schedule exactly 'lecturesPerWeek' slots for EVERY subject for the target batch(es).
+        4. **Slot Variance**: For a specific subject (e.g., Math), try to schedule it at different times on different days (e.g., Mon Slot 1, Tue Slot 3) rather than always in the same slot.
 
         OUTPUT FORMAT:
         Return a JSON Array of objects. Each object represents one class assignment.
