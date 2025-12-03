@@ -5,22 +5,42 @@ import Dashboard from './components/Dashboard';
 import Scheduler from './components/Scheduler';
 import DataManagement from './components/DataManagement';
 import Settings from './components/Settings';
-import { StoreProvider } from './context/StoreContext';
+import Login from './components/Login';
+import { StoreProvider, useStore } from './context/StoreContext';
+import { Loader2 } from 'lucide-react';
+
+const ProtectedRoute = ({ children }: React.PropsWithChildren) => {
+  const { user, loading } = useStore();
+
+  if (loading) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-primary">
+        <Loader2 size={40} className="animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Layout>{children}</Layout>;
+};
 
 const App: React.FC = () => {
   return (
     <StoreProvider>
       <HashRouter>
-        <Layout>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/schedule" element={<Scheduler />} />
-            <Route path="/resources" element={<DataManagement />} />
-            <Route path="/analytics" element={<Navigate to="/" replace />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </Layout>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/schedule" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
+          <Route path="/resources" element={<ProtectedRoute><DataManagement /></ProtectedRoute>} />
+          <Route path="/analytics" element={<Navigate to="/" replace />} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
       </HashRouter>
     </StoreProvider>
   );

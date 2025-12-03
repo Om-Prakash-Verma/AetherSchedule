@@ -17,7 +17,7 @@ import {
     DocumentData,
     orderBy
 } from 'firebase/firestore';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
 import { generateTimeSlots } from '../core/TimeUtils';
 
 // Default Settings
@@ -32,6 +32,7 @@ const DEFAULT_SETTINGS: TimetableSettings = {
 };
 
 interface StoreState {
+  user: User | null;
   faculty: Faculty[];
   rooms: Room[];
   subjects: Subject[];
@@ -76,12 +77,17 @@ interface StoreState {
   restoreVersion: (versionId: string) => Promise<void>;
   deleteVersion: (versionId: string) => Promise<void>;
 
+  // Auth
+  login: (email: string, pass: string) => Promise<void>;
+  logout: () => Promise<void>;
+
   loading: boolean;
 }
 
 const StoreContext = createContext<StoreState | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
   const [faculty, setFaculty] = useState<Faculty[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -157,20 +163,21 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         });
     };
 
-    const unsubAuth = onAuthStateChanged(auth, async (user) => {
-        if (user) {
-            console.log("Authenticated:", user.uid);
-            setLoading(false);
+    const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
+        setUser(currentUser);
+        if (currentUser) {
+            console.log("Authenticated:", currentUser.email);
             setupListeners();
         } else {
-            console.log("Signing in anonymously...");
-            try {
-                if (auth) await signInAnonymously(auth);
-            } catch (error) {
-                console.warn("Auth failed:", error);
-                setLoading(false);
-            }
+            console.log("User signed out.");
+            // Clear state on logout
+            setFaculty([]);
+            setRooms([]);
+            setSubjects([]);
+            setBatches([]);
+            setSchedule([]);
         }
+        setLoading(false);
     });
 
     return () => {
@@ -185,6 +192,16 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (unsubVersions) unsubVersions();
     };
   }, []);
+
+  const login = async (email: string, pass: string) => {
+      if (!auth) throw new Error("Auth not initialized");
+      await signInWithEmailAndPassword(auth, email, pass);
+  };
+
+  const logout = async () => {
+      if (!auth) return;
+      await signOut(auth);
+  };
 
   // Enhanced Conflict Detection
   const checkConflicts = () => {
@@ -595,6 +612,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   return (
     <StoreContext.Provider value={{
+      user, login, logout,
       faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots, versions,
       addScheduleEntry, updateScheduleEntry, deleteScheduleEntry, checkConflicts, resetData, saveGeneratedSchedule, loading,
       addFaculty, addRoom, addSubject, addBatch, addDepartment,

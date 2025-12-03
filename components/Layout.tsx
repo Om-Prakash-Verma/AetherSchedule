@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Users, BarChart3, Settings, Command, Cloud, Loader2, Menu, X } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { LayoutDashboard, Calendar, Users, BarChart3, Settings, Command, Cloud, Loader2, Menu, X, LogOut } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useStore } from '../context/StoreContext';
 
@@ -28,10 +28,11 @@ const SidebarItem = ({ to, icon: Icon, label, onClick }: { to: string, icon: any
     );
 };
 
-const Layout: React.FC<LayoutProps> = ({ children }) => {
-  const { loading } = useStore();
+const Layout = ({ children }: LayoutProps) => {
+  const { loading, logout, user } = useStore();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -46,6 +47,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           document.body.style.overflow = 'unset';
       }
   }, [isSidebarOpen]);
+
+  const handleLogout = async () => {
+      await logout();
+      navigate('/login');
+  };
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black text-slate-200 selection:bg-primary/30">
@@ -109,6 +115,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
         </nav>
 
         <div className="mt-auto pt-6 border-t border-glassBorder space-y-4">
+            <SidebarItem to="/settings" icon={Settings} label="Settings" />
+
             {/* Connection Status Indicator */}
             <div className={clsx(
                 "px-4 py-3 rounded-xl border flex items-center gap-3 text-xs font-medium transition-colors",
@@ -124,12 +132,18 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="min-w-0">
                     <p className="truncate">{loading ? "Connecting..." : "Live Database"}</p>
                     <p className="opacity-60 text-[10px] truncate">
-                        {loading ? "Initializing..." : "Firebase Connected"}
+                        {user?.email || "Connected"}
                     </p>
                 </div>
             </div>
 
-            <SidebarItem to="/settings" icon={Settings} label="Settings" />
+            <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all duration-200"
+            >
+                <LogOut size={20} />
+                <span className="font-medium">Sign Out</span>
+            </button>
         </div>
       </aside>
 
