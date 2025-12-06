@@ -2,20 +2,21 @@ import React, { useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { 
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
-    PieChart, Pie, Cell, AreaChart, Area, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar
+    PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
-import { Users, Box, Building, Calendar, Activity, TrendingUp, BarChart3, AlertCircle } from 'lucide-react';
+import { Users, Box, Building, Calendar, Activity, TrendingUp, BarChart3, AlertTriangle, Layers, BookOpen, Clock } from 'lucide-react';
 import { clsx } from 'clsx';
 
 const COLORS = ['#6366f1', '#06b6d4', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
+const TYPE_COLORS = { LECTURE: '#3b82f6', LAB: '#a855f7' };
 
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-slate-900/90 border border-slate-700 p-3 rounded-xl shadow-xl backdrop-blur-md">
+            <div className="bg-slate-900/90 border border-slate-700 p-3 rounded-xl shadow-xl backdrop-blur-md z-50">
                 <p className="text-slate-300 text-xs font-medium mb-1">{label}</p>
                 <p className="text-white font-bold text-sm">
-                    {payload[0].value} <span className="text-slate-500 font-normal text-xs ml-1">{payload[0].name === 'value' ? 'Hours' : payload[0].name}</span>
+                    {payload[0].value} <span className="text-slate-500 font-normal text-xs ml-1">{payload[0].name === 'value' ? 'Count' : payload[0].name}</span>
                 </p>
             </div>
         );
@@ -37,7 +38,7 @@ const StatCard = ({ title, value, subtext, icon: Icon, colorClass }: any) => (
 );
 
 const Analytics = () => {
-    const { schedule, faculty, rooms, departments, batches, settings } = useStore();
+    const { schedule, faculty, rooms, departments, batches, subjects, settings, generatedSlots, conflicts } = useStore();
 
     // --- 1. Faculty Workload Data ---
     const facultyLoadData = useMemo(() => {
@@ -48,26 +49,53 @@ const Analytics = () => {
                 hours: load,
                 department: f.department
             };
-        }).sort((a, b) => b.hours - a.hours); // Sort by busiest
+        }).sort((a, b) => b.hours - a.hours).slice(0, 10);
     }, [faculty, schedule]);
 
-    // --- 2. Department Distribution ---
+    // --- 2. Batch Workload Data (NEW) ---
+    const batchLoadData = useMemo(() => {
+        return batches.map(b => {
+            const load = schedule.filter(s => s.batchId === b.id).length;
+            return {
+                name: b.name,
+                classes: load
+            };
+        }).sort((a, b) => b.classes - a.classes).slice(0, 10);
+    }, [batches, schedule]);
+
+    // --- 3. Subject Type Distribution (NEW) ---
+    const subjectTypeData = useMemo(() => {
+        let lectureCount = 0;
+        let labCount = 0;
+        
+        schedule.forEach(s => {
+            const sub = subjects.find(sub => sub.id === s.subjectId);
+            if (sub) {
+                if (sub.requiredRoomType === 'LAB') labCount++;
+                else lectureCount++;
+            }
+        });
+
+        return [
+            { name: 'Lecture', value: lectureCount },
+            { name: 'Laboratory', value: labCount }
+        ].filter(d => d.value > 0);
+    }, [schedule, subjects]);
+
+    // --- 4. Department Distribution ---
     const departmentData = useMemo(() => {
         const counts: Record<string, number> = {};
         schedule.forEach(s => {
-            // Find subject department or faculty department
-            // For simplicity, we assume the department comes from the primary faculty assigned
             if (s.facultyIds && s.facultyIds.length > 0) {
                 const fac = faculty.find(f => f.id === s.facultyIds[0]);
                 const dept = fac?.department || 'Unassigned';
                 counts[dept] = (counts[dept] || 0) + 1;
             }
         });
-
         return Object.entries(counts).map(([name, value]) => ({ name, value }));
     }, [schedule, faculty]);
 
-    // --- 3. Room Utilization ---
+    // --- 5. Room Utilization ---
     const roomData = useMemo(() => {
         return rooms.map(r => {
             const usage = schedule.filter(s => s.roomId === r.id).length;
@@ -76,10 +104,10 @@ const Analytics = () => {
                 usage: usage,
                 capacity: r.capacity
             };
-        }).sort((a, b) => b.usage - a.usage);
+        }).sort((a, b) => b.usage - a.usage).slice(0, 10);
     }, [rooms, schedule]);
 
-    // --- 4. Daily Distribution ---
+    // --- 6. Daily Distribution ---
     const dailyData = useMemo(() => {
         const days = settings.workingDays || [];
         return days.map(day => ({
@@ -88,11 +116,37 @@ const Analytics = () => {
         }));
     }, [schedule, settings.workingDays]);
 
+    // --- 7. Congestion Heatmap (NEW) ---
+    const congestionData = useMemo(() => {
+        const days = settings.workingDays || [];
+        // Map slot indices to actual time strings if available, else just "Slot X"
+        const slots = generatedSlots.length > 0 ? generatedSlots : Array.from({length: 8}, (_, i) => `Slot ${i+1}`);
+        
+        let maxDensity = 0;
+        const grid = days.map(day => {
+            const daySlots = slots.map((timeLabel, index) => {
+                // Schedule uses 1-based indexing for slots
+                const slotIndex = index + 1; 
+                const count = schedule.filter(s => s.day === day && s.slot === slotIndex).length;
+                if (count > maxDensity) maxDensity = count;
+                return { 
+                    slotIndex, 
+                    timeLabel, 
+                    count 
+                };
+            });
+            return { day, daySlots };
+        });
+        
+        return { grid, maxDensity: maxDensity || 1 };
+    }, [schedule, settings, generatedSlots]);
+
     // Stats Calculation
     const totalWeeklyHours = schedule.length;
     const avgFacultyLoad = faculty.length ? Math.round(totalWeeklyHours / faculty.length) : 0;
     const busiestDay = dailyData.reduce((prev, current) => (prev.classes > current.classes) ? prev : current, { name: 'N/A', classes: 0 });
     const mostUtilizedRoom = roomData.length > 0 ? roomData[0] : { name: 'N/A', usage: 0 };
+    const conflictCount = conflicts.length;
 
     if (schedule.length === 0) {
         return (
@@ -138,29 +192,39 @@ const Analytics = () => {
                     icon={Calendar} 
                     colorClass="bg-amber-500/20"
                 />
-                <StatCard 
-                    title="Top Room" 
-                    value={mostUtilizedRoom.name} 
-                    subtext={`${mostUtilizedRoom.usage} hours occupied`}
-                    icon={Box} 
-                    colorClass="bg-purple-500/20"
-                />
+                {conflictCount > 0 ? (
+                    <StatCard 
+                        title="Active Conflicts" 
+                        value={conflictCount} 
+                        subtext="Requires attention"
+                        icon={AlertTriangle} 
+                        colorClass="bg-red-500/20 text-red-500"
+                    />
+                ) : (
+                    <StatCard 
+                        title="Top Room" 
+                        value={mostUtilizedRoom.name} 
+                        subtext={`${mostUtilizedRoom.usage} hours occupied`}
+                        icon={Box} 
+                        colorClass="bg-purple-500/20"
+                    />
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 
-                {/* Faculty Workload Chart */}
+                {/* 1. Faculty Workload Chart */}
                 <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col">
                     <div className="flex items-center justify-between mb-6">
                         <h3 className="text-lg font-bold text-white flex items-center gap-2">
                             <Users size={20} className="text-primary" />
                             Faculty Workload
                         </h3>
-                        <span className="text-xs text-slate-500 bg-slate-900/50 px-2 py-1 rounded-md">Hours / Week</span>
+                        <span className="text-xs text-slate-500 bg-slate-900/50 px-2 py-1 rounded-md">Top 10 Busiest</span>
                     </div>
-                    <div className="h-80 w-full flex-1 min-h-[300px]">
+                    <div className="h-64 w-full flex-1 min-h-[250px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={facultyLoadData.slice(0, 10)} layout="vertical" margin={{ left: 0, right: 30 }}>
+                            <BarChart data={facultyLoadData} layout="vertical" margin={{ left: 0, right: 30 }}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={true} vertical={false} />
                                 <XAxis type="number" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                                 <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={11} width={100} tickLine={false} axisLine={false} />
@@ -169,74 +233,174 @@ const Analytics = () => {
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
-                    <p className="text-xs text-slate-500 mt-4 text-center">Top 10 busiest faculty members shown</p>
                 </div>
 
-                {/* Department Distribution */}
+                {/* 2. Batch Workload Chart (NEW) */}
                 <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col">
-                    <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                        <Building size={20} className="text-emerald-400" />
-                        Departmental Share
-                    </h3>
-                    <div className="h-80 w-full flex-1 min-h-[300px] flex items-center justify-center">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Layers size={20} className="text-cyan-400" />
+                            Batch Activity
+                        </h3>
+                        <span className="text-xs text-slate-500 bg-slate-900/50 px-2 py-1 rounded-md">Classes / Week</span>
+                    </div>
+                    <div className="h-64 w-full flex-1 min-h-[250px]">
                         <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={departmentData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={80}
-                                    outerRadius={110}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {departmentData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.2)" />
-                                    ))}
-                                </Pie>
-                                <Tooltip content={<CustomTooltip />} />
-                                <Legend 
-                                    verticalAlign="bottom" 
-                                    height={36} 
-                                    iconType="circle"
-                                    formatter={(value) => <span className="text-slate-400 text-xs ml-1">{value}</span>}
-                                />
-                            </PieChart>
+                            <BarChart data={batchLoadData} layout="vertical" margin={{ left: 0, right: 30 }}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" horizontal={true} vertical={false} />
+                                <XAxis type="number" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
+                                <YAxis dataKey="name" type="category" stroke="#94a3b8" fontSize={11} width={80} tickLine={false} axisLine={false} />
+                                <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(255,255,255,0.05)'}} />
+                                <Bar dataKey="classes" fill="#06b6d4" radius={[0, 4, 4, 0]} barSize={20} />
+                            </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
 
-                {/* Daily Load Distribution */}
-                <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col lg:col-span-2">
-                    <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-                        <TrendingUp size={20} className="text-amber-400" />
-                        Weekly Schedule Density
-                    </h3>
-                    <div className="h-64 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <AreaChart data={dailyData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                                <defs>
-                                    <linearGradient id="colorClasses" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3}/>
-                                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
-                                    </linearGradient>
-                                </defs>
-                                <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                                <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
-                                <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
-                                <Tooltip content={<CustomTooltip />} />
-                                <Area type="monotone" dataKey="classes" stroke="#f59e0b" strokeWidth={3} fillOpacity={1} fill="url(#colorClasses)" />
-                            </AreaChart>
-                        </ResponsiveContainer>
+                {/* 3. Composition Row: Subject Types & Departments */}
+                <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Subject Type Distribution (Donut) */}
+                    <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col">
+                        <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                            <BookOpen size={20} className="text-pink-400" />
+                            Curriculum Composition
+                        </h3>
+                        <div className="h-64 w-full flex-1 flex items-center justify-center relative">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={subjectTypeData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={80}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {subjectTypeData.map((entry, index) => (
+                                            <Cell 
+                                                key={`cell-${index}`} 
+                                                fill={entry.name === 'Laboratory' ? TYPE_COLORS.LAB : TYPE_COLORS.LECTURE} 
+                                                stroke="rgba(0,0,0,0.2)" 
+                                            />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend 
+                                        verticalAlign="bottom" 
+                                        height={36} 
+                                        iconType="circle"
+                                        formatter={(value) => <span className="text-slate-400 text-xs ml-1">{value}</span>}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            {/* Inner Label */}
+                            <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none pb-8">
+                                <span className="text-3xl font-bold text-white">{totalWeeklyHours}</span>
+                                <span className="text-[10px] text-slate-500 uppercase tracking-widest">Classes</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Department Distribution (Pie) */}
+                    <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col">
+                        <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                            <Building size={20} className="text-emerald-400" />
+                            Departmental Share
+                        </h3>
+                        <div className="h-64 w-full flex-1 flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={departmentData}
+                                        cx="50%"
+                                        cy="50%"
+                                        outerRadius={80}
+                                        paddingAngle={2}
+                                        dataKey="value"
+                                    >
+                                        {departmentData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0.2)" />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip content={<CustomTooltip />} />
+                                    <Legend 
+                                        verticalAlign="bottom" 
+                                        height={36} 
+                                        iconType="circle"
+                                        formatter={(value) => <span className="text-slate-400 text-xs ml-1">{value}</span>}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
                 </div>
 
-                {/* Room Utilization */}
+                {/* 4. Campus Congestion Heatmap (NEW) */}
+                <div className="lg:col-span-2 bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                            <Activity size={20} className="text-orange-400" />
+                            Campus Congestion Heatmap
+                        </h3>
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                             <span className="block w-3 h-3 bg-primary/20 rounded"></span>
+                             <span>Low</span>
+                             <span className="block w-3 h-3 bg-primary rounded ml-2"></span>
+                             <span>High Activity</span>
+                        </div>
+                    </div>
+                    
+                    <div className="overflow-x-auto pb-2">
+                        <div className="min-w-[800px]">
+                            {/* Header Row */}
+                            <div className="flex mb-2">
+                                <div className="w-24 flex-shrink-0"></div>
+                                {congestionData.grid[0]?.daySlots.map((s, i) => (
+                                    <div key={i} className="flex-1 text-center text-xs text-slate-500 font-mono">
+                                        {s.timeLabel.split('-')[0]} 
+                                    </div>
+                                ))}
+                            </div>
+                            
+                            {/* Grid Rows */}
+                            <div className="space-y-2">
+                                {congestionData.grid.map((row) => (
+                                    <div key={row.day} className="flex gap-2">
+                                        <div className="w-24 flex-shrink-0 flex items-center text-sm font-bold text-slate-400">
+                                            {row.day}
+                                        </div>
+                                        {row.daySlots.map((slot, i) => {
+                                            const intensity = congestionData.maxDensity > 0 ? slot.count / congestionData.maxDensity : 0;
+                                            return (
+                                                <div 
+                                                    key={i} 
+                                                    className="flex-1 h-12 rounded-md transition-all hover:ring-2 hover:ring-white/20 relative group"
+                                                    style={{ 
+                                                        backgroundColor: `rgba(99, 102, 241, ${Math.max(0.1, intensity)})`, // Primary color with opacity
+                                                        border: '1px solid rgba(255,255,255,0.05)'
+                                                    }}
+                                                >
+                                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span className="text-xs font-bold text-white drop-shadow-md">{slot.count}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2 text-center">Visualizes the number of simultaneous classes occurring in each time slot across the entire institution.</p>
+                </div>
+
+                {/* 5. Room Utilization */}
                 <div className="bg-glass border border-glassBorder p-6 rounded-2xl backdrop-blur-md flex flex-col lg:col-span-2">
                      <div className="flex items-center justify-between mb-6">
                         <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                            <Box size={20} className="text-cyan-400" />
-                            Room Occupancy
+                            <Box size={20} className="text-purple-400" />
+                            Room Occupancy Leaderboard
                         </h3>
                     </div>
                     <div className="h-64 w-full">
@@ -245,11 +409,46 @@ const Analytics = () => {
                                 <XAxis dataKey="name" stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                                 <YAxis stroke="#64748b" fontSize={12} tickLine={false} axisLine={false} />
                                 <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(255,255,255,0.05)'}} />
-                                <Bar dataKey="usage" fill="#06b6d4" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                <Bar dataKey="usage" fill="#8b5cf6" radius={[4, 4, 0, 0]} maxBarSize={50} />
                             </BarChart>
                         </ResponsiveContainer>
                     </div>
                 </div>
+
+                {/* 6. Conflict Monitor (Conditional) */}
+                {conflictCount > 0 && (
+                    <div className="lg:col-span-2 bg-red-500/5 border border-red-500/20 p-6 rounded-2xl backdrop-blur-md animate-in slide-in-from-bottom-4">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-white">Conflict Monitor</h3>
+                                <p className="text-red-300 text-sm">Critical scheduling overlaps detected</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                             <div className="bg-slate-900/50 p-4 rounded-xl border border-red-500/10">
+                                 <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Room Double Bookings</div>
+                                 <div className="text-2xl font-bold text-white">
+                                     {conflicts.filter(c => c.type === 'ROOM').length}
+                                 </div>
+                             </div>
+                             <div className="bg-slate-900/50 p-4 rounded-xl border border-red-500/10">
+                                 <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Faculty Overlaps</div>
+                                 <div className="text-2xl font-bold text-white">
+                                     {conflicts.filter(c => c.type === 'FACULTY').length}
+                                 </div>
+                             </div>
+                             <div className="bg-slate-900/50 p-4 rounded-xl border border-red-500/10">
+                                 <div className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-2">Capacity Issues</div>
+                                 <div className="text-2xl font-bold text-white">
+                                     {conflicts.filter(c => c.type === 'CAPACITY').length}
+                                 </div>
+                             </div>
+                        </div>
+                    </div>
+                )}
 
             </div>
         </div>
