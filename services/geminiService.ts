@@ -9,13 +9,12 @@ export const checkHealth = (): boolean => {
   return !!process.env.API_KEY;
 };
 
-// We use Gemini 2.5 Flash as the primary model because it is:
-// 1. Fast and Low Latency
-// 2. High Quota (avoids 429 errors on free tier)
-// 3. Supports 'thinkingConfig' for complex reasoning
-const REASONING_MODEL = "gemini-2.5-flash";
+// We use Gemini 3.0 Pro Preview as the primary model because it is:
+// 1. Best-in-class reasoning capabilities for complex constraint solving (UCTP)
+// 2. Supports 'thinkingConfig' with larger budgets
+const REASONING_MODEL = "gemini-3-pro-preview";
 
-// Fallback model
+// Fallback model (Fast, Low Latency, High Quota)
 const SECONDARY_MODEL = "gemini-2.5-flash";
 
 export interface AIAnalysisResult {
@@ -233,6 +232,10 @@ const validateAndRepairSchedule = (
     // Create a deep copy to modify
     const repairedSchedule = [...generatedEntries];
     
+    console.log(`🔧 Repair Layer: Verifying ${repairedSchedule.length} entries against ${existingSchedule.length} existing constraints...`);
+    let conflictsFound = 0;
+    let resolvedConflicts = 0;
+
     // Busy Matrix: Tracks usage of Rooms and Faculty for specific Day/Slot
     // Key: `Day-Slot` -> Set of busy Resource IDs
     const busyMatrix = new Map<string, Set<string>>();
@@ -266,6 +269,9 @@ const validateAndRepairSchedule = (
         }
 
         if (isConflict) {
+            conflictsFound++;
+            console.warn(`⚠️ Conflict Detected: Entry for Subject ${entry.subjectId} at ${entry.day} Slot ${entry.slot}. Finding alternative...`);
+
             // Find a new slot
             let foundSlot = false;
             
@@ -288,12 +294,18 @@ const validateAndRepairSchedule = (
                     
                     if (!candidateHasConflict) {
                         // Found a free slot! Move it.
+                        console.log(`   -> ✅ Solved: Moved to ${day} Slot ${slotIdx}`);
                         entry.day = day;
                         entry.slot = slotIdx;
                         foundSlot = true;
+                        resolvedConflicts++;
                         break;
                     }
                 }
+            }
+
+            if (!foundSlot) {
+                console.error(`   -> ❌ Unresolvable: No slot found for Subject ${entry.subjectId}.`);
             }
         }
 
@@ -306,6 +318,7 @@ const validateAndRepairSchedule = (
         (entry.facultyIds || []).forEach(fid => finalSet.add(`FAC:${fid}`));
     }
     
+    console.log(`🔧 Repair Summary: ${conflictsFound} conflicts detected, ${resolvedConflicts} resolved.`);
     return repairedSchedule;
 };
 
@@ -325,12 +338,17 @@ export const generateScheduleWithGemini = async (
 ): Promise<ScheduleEntry[]> => {
     if (!process.env.API_KEY) throw new Error("Gemini API Key missing. Please check .env file.");
 
+    console.group("🤖 Gemini Auto-Scheduler v3.0");
+
     // 1. Filter Batches: If targetBatchId is set, only send that batch to the AI
     const batchesToSchedule = targetBatchId 
         ? batches.filter(b => b.id === targetBatchId) 
         : batches;
 
+    console.log(`Target: ${targetBatchId ? "Single Batch (" + batchesToSchedule[0]?.name + ")" : "Full Schedule (All Batches)"}`);
+
     if (batchesToSchedule.length === 0) {
+        console.groupEnd();
         throw new Error("No batch found to schedule.");
     }
 
@@ -366,6 +384,11 @@ export const generateScheduleWithGemini = async (
     const cleanFaculty = faculty.map(f => ({ id: f.id, name: f.name }));
     const cleanRooms = rooms.map(r => ({ id: r.id, name: r.name, type: r.type, capacity: r.capacity }));
     
+    console.log(`Context: ${batchesToSchedule.length} batches, ${cleanSubjects.length} subjects, ${cleanFaculty.length} faculty, ${cleanRooms.length} rooms.`);
+    if (busySlots.length > 0) {
+        console.log(`Constraints: Respecting ${busySlots.length} existing busy slots from other batches.`);
+    }
+
     const days = settings.workingDays;
     const slots = generatedSlots;
     const totalSlotsPerDay = slots.length;
@@ -475,8 +498,9 @@ export const generateScheduleWithGemini = async (
 
     let rawSchedule: any[] = [];
 
-    // Attempt 1: Gemini 2.5 Flash with Thinking Config
+    // Attempt 1: Gemini 3.0 Pro with Thinking Config
     try {
+        console.time("🧠 AI Reasoning & Generation");
         const response = await ai.models.generateContent({
             model: REASONING_MODEL,
             contents: prompt,
@@ -485,15 +509,21 @@ export const generateScheduleWithGemini = async (
                 responseSchema: responseSchema,
                 // Thinking config allows the model to "plan" the schedule before outputting JSON.
                 // This significantly improves constraint satisfaction for timetabling.
-                thinkingConfig: { thinkingBudget: 2048 }
+                // Increased budget for Gemini 3.0 Pro
+                thinkingConfig: { thinkingBudget: 4096 }
             }
         });
+        console.timeEnd("🧠 AI Reasoning & Generation");
         rawSchedule = JSON.parse(response.text || "[]");
+        console.log(`📥 Received ${rawSchedule.length} raw entries from Gemini.`);
 
     } catch (primaryError: any) {
+        console.timeEnd("🧠 AI Reasoning & Generation");
+        console.warn("⚠️ Primary Model failed (likely timeout or rate limit). Switching to Standard Model...", primaryError);
         
-        // Attempt 2: Retry with same model but without thinking config (sometimes thinking causes timeouts on complex prompts)
+        // Attempt 2: Retry with Secondary Model (Flash)
         try {
+            console.time("🧠 AI Retry (Flash)");
             const response = await ai.models.generateContent({
                 model: SECONDARY_MODEL,
                 contents: prompt,
@@ -502,9 +532,14 @@ export const generateScheduleWithGemini = async (
                     responseSchema: responseSchema
                 }
             });
+            console.timeEnd("🧠 AI Retry (Flash)");
             rawSchedule = JSON.parse(response.text || "[]");
+            console.log(`📥 Received ${rawSchedule.length} raw entries from Fallback Model.`);
 
         } catch (secondaryError: any) {
+             console.timeEnd("🧠 AI Retry (Flash)");
+             console.error("❌ AI Generation Failed completely.", secondaryError);
+             console.groupEnd();
              if (primaryError?.status === 429 || secondaryError?.status === 429) {
                  throw new Error("AI Service Busy (Rate Limit Exceeded). Please wait 30 seconds and try again.");
              }
@@ -519,6 +554,7 @@ export const generateScheduleWithGemini = async (
     // We pass the existing schedule so it can check against global constraints
     processedSchedule = validateAndRepairSchedule(processedSchedule, existingSchedule || [], settings, generatedSlots);
 
+    console.groupEnd();
     return processedSchedule;
 };
 
