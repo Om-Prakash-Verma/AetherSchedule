@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { generateTimeline } from '../core/TimeUtils';
-import { Search, Users, ArrowLeft, Calendar, Clock, MapPin, User, GraduationCap, Coffee } from 'lucide-react';
+import { Search, Users, ArrowLeft, Clock, MapPin, User, GraduationCap, Coffee } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Batch } from '../types';
 
@@ -181,7 +181,7 @@ const StudentPortal = () => {
             </div>
 
             {/* Timetable Grid */}
-            <div className="flex-1 rounded-2xl border border-glassBorder bg-slate-900/50 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex flex-1 rounded-2xl border border-glassBorder bg-slate-900/50 backdrop-blur-sm shadow-2xl overflow-hidden flex-col">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full border-collapse min-w-[1000px]">
                         <thead>

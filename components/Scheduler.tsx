@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleEntry } from '../types';
-import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock, Coffee } from 'lucide-react';
+import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock, Coffee, MapPin, User } from 'lucide-react';
 import { clsx } from 'clsx';
 import { chatWithScheduler, generateScheduleWithGemini } from '../services/geminiService';
 import { generateTimeline, TimelineItem } from '../core/TimeUtils';
@@ -329,7 +329,7 @@ const Scheduler = () => {
             )}
 
             {/* Timetable Grid - Horizontal Scroll Container */}
-            <div className="overflow-hidden rounded-xl border border-glassBorder bg-glass backdrop-blur-sm shadow-xl flex-1 flex flex-col">
+            <div className="flex flex-1 overflow-hidden rounded-xl border border-glassBorder bg-glass backdrop-blur-sm shadow-xl flex-col">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full border-collapse min-w-[800px]">
                         <thead>

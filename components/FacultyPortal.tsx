@@ -168,7 +168,7 @@ const FacultyPortal = () => {
             </div>
 
             {/* Timetable Grid */}
-            <div className="flex-1 rounded-2xl border border-glassBorder bg-slate-900/50 backdrop-blur-sm shadow-2xl overflow-hidden flex flex-col">
+            <div className="flex flex-1 rounded-2xl border border-glassBorder bg-slate-900/50 backdrop-blur-sm shadow-2xl overflow-hidden flex-col">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full border-collapse min-w-[1000px]">
                         <thead>
