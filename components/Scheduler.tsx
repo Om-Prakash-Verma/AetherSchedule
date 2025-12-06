@@ -32,7 +32,6 @@ const Scheduler = () => {
     useEffect(() => {
         let interval: any;
         if (isGenerating) {
-            setElapsedTime(0);
             interval = setInterval(() => {
                 setElapsedTime(prev => prev + 1);
             }, 1000);
@@ -102,6 +101,7 @@ const Scheduler = () => {
              return;
         }
 
+        setElapsedTime(0);
         setIsGenerating(true);
 
         try {
@@ -154,7 +154,7 @@ const Scheduler = () => {
                         onClick={handleGenerate}
                         disabled={isGenerating || !selectedBatchId}
                         className={clsx(
-                            "flex-grow sm:flex-none justify-center px-3 md:px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all whitespace-nowrap shadow-lg text-sm font-medium min-w-fit",
+                            "flex-grow sm:flex-none justify-center px-4 py-2.5 rounded-xl flex items-center gap-2 transition-all whitespace-nowrap shadow-lg text-sm font-medium min-w-fit",
                             isGenerating 
                                 ? "bg-slate-800 border border-emerald-500/30 text-emerald-400 cursor-wait shadow-none" 
                                 : "bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -163,14 +163,13 @@ const Scheduler = () => {
                         {isGenerating ? (
                             <>
                                 <Loader2 size={18} className="animate-spin" />
-                                <span className="hidden xs:inline animate-pulse">Generating... {elapsedTime}s</span>
-                                <span className="xs:hidden">Gen...</span>
+                                <span>Generating ({elapsedTime}s)</span>
                             </>
                         ) : (
                             <>
                                 <Sparkles size={18} />
-                                <span className="hidden xs:inline">Auto-Schedule</span>
-                                <span className="xs:hidden">Auto</span>
+                                <span className="hidden sm:inline">Auto-Schedule</span>
+                                <span className="sm:hidden">Auto</span>
                             </>
                         )}
                     </button>
