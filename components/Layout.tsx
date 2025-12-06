@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import { useStore } from '../context/StoreContext';
 
 interface LayoutProps {
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 const SidebarItem = ({ to, icon: Icon, label, onClick }: { to: string, icon: any, label: string, onClick?: () => void }) => {
