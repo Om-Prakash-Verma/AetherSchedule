@@ -1,11 +1,16 @@
 
-
 export enum ResourceType {
   FACULTY = 'FACULTY',
   ROOM = 'ROOM',
   BATCH = 'BATCH',
   SUBJECT = 'SUBJECT',
   DEPARTMENT = 'DEPARTMENT'
+}
+
+export interface AdminProfile {
+    id: string; // The User UID
+    email?: string; // Optional email for display
+    addedAt?: string;
 }
 
 export interface Department {

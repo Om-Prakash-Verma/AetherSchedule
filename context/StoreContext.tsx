@@ -1,22 +1,9 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion } from '../types';
+import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion, AdminProfile } from '../types';
 import { db, auth } from '../services/firebase';
-import { 
-    collection, 
-    onSnapshot, 
-    setDoc, 
-    updateDoc, 
-    deleteDoc, 
-    doc, 
-    writeBatch, 
-    getDocs,
-    query,
-    where,
-    QuerySnapshot,
-    DocumentData,
-    orderBy
-} from 'firebase/firestore';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, User } from 'firebase/auth';
+import { saveScheduleSecurely } from '../services/geminiService';
+import firebase from 'firebase/compat/app';
 import { generateTimeSlots } from '../core/TimeUtils';
 
 // Default Settings
@@ -31,7 +18,9 @@ const DEFAULT_SETTINGS: TimetableSettings = {
 };
 
 interface StoreState {
-  user: User | null;
+  user: firebase.User | null;
+  isAdmin: boolean;
+  
   faculty: Faculty[];
   rooms: Room[];
   subjects: Subject[];
@@ -42,6 +31,7 @@ interface StoreState {
   settings: TimetableSettings;
   generatedSlots: string[]; // Computed from settings
   versions: ScheduleVersion[]; // Version History
+  admins: AdminProfile[]; // List of admins
   
   addScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
   updateScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
@@ -71,6 +61,10 @@ interface StoreState {
   resetData: () => void;
   saveGeneratedSchedule: (newSchedule: ScheduleEntry[], targetBatchId?: string) => Promise<void>;
   
+  // Admin Management
+  addAdmin: (uid: string, email?: string) => Promise<void>;
+  removeAdmin: (uid: string) => Promise<void>;
+  
   // Version Control
   saveVersion: (name: string) => Promise<void>;
   restoreVersion: (versionId: string) => Promise<void>;
@@ -86,7 +80,9 @@ interface StoreState {
 const StoreContext = createContext<StoreState | undefined>(undefined);
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<firebase.User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  
   const [faculty, setFaculty] = useState<Faculty[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -96,6 +92,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [settings, setSettings] = useState<TimetableSettings>(DEFAULT_SETTINGS);
   const [versions, setVersions] = useState<ScheduleVersion[]>([]);
+  const [admins, setAdmins] = useState<AdminProfile[]>([]);
   
   const [loading, setLoading] = useState(true);
 
@@ -104,33 +101,75 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   // Helper to subscribe to a collection with error handling
   const subscribe = (collectionName: string, setter: Function, ordered = false) => {
-    const firestore = db;
-    if (!firestore) return () => {};
+    if (!db) return () => {};
     
-    let q;
+    let q: firebase.firestore.Query | firebase.firestore.CollectionReference = db.collection(collectionName);
     if (ordered) {
-        q = query(collection(firestore, collectionName), orderBy('createdAt', 'desc'));
-    } else {
-        q = collection(firestore, collectionName);
+        q = q.orderBy('createdAt', 'desc');
     }
 
-    return onSnapshot(q, 
-      (snapshot: QuerySnapshot<DocumentData>) => {
+    return q.onSnapshot(
+      (snapshot) => {
         const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
         setter(data);
       }, 
       (error) => {
-        console.warn(`Error listening to ${collectionName}:`, error.message);
+        if ((error as any).code === 'permission-denied') {
+            console.warn(`Permission denied for collection: ${collectionName}. Check Firestore Rules.`);
+        } else {
+            console.error(`Error listening to ${collectionName}:`, error.message);
+        }
       }
     );
   };
 
+  // 1. Auth & Admin Status Effect
   useEffect(() => {
-    if (!db || !auth) {
+    if (!auth || !db) {
         setLoading(false);
         return;
     }
-    const firestore = db;
+
+    let unsubAdminCheck: () => void;
+
+    const unsubAuth = auth.onAuthStateChanged((currentUser) => {
+        setUser(currentUser);
+        
+        if (currentUser) {
+            // Subscribe to admin document to check permissions in real-time
+            unsubAdminCheck = db!.collection('admins').doc(currentUser.uid).onSnapshot(
+                (snap) => {
+                    const isNowAdmin = snap.exists;
+                    // Avoid unnecessary state updates to prevent re-renders
+                    setIsAdmin(prev => {
+                        if (prev !== isNowAdmin) {
+                            console.log(`Admin status changed: ${isNowAdmin}`);
+                            return isNowAdmin;
+                        }
+                        return prev;
+                    });
+                },
+                (err) => {
+                    console.warn("Error checking admin status doc:", (err as any).code);
+                    setIsAdmin(false);
+                }
+            );
+        } else {
+            setIsAdmin(false);
+            if (unsubAdminCheck) unsubAdminCheck();
+        }
+        setLoading(false);
+    });
+
+    return () => {
+        unsubAuth();
+        if (unsubAdminCheck) unsubAdminCheck();
+    };
+  }, []);
+
+  // 2. Data Subscription Effect (Depends on user + isAdmin)
+  useEffect(() => {
+    if (!db) return;
 
     let unsubFaculty: () => void;
     let unsubRooms: () => void;
@@ -140,47 +179,47 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let unsubSchedule: () => void;
     let unsubSettings: () => void;
     let unsubVersions: () => void;
+    let unsubAdmins: () => void;
 
-    const setupListeners = () => {
-        console.log("Setting up data listeners...");
+    const setupPublicListeners = () => {
         unsubFaculty = subscribe('faculty', setFaculty);
         unsubRooms = subscribe('rooms', setRooms);
         unsubSubjects = subscribe('subjects', setSubjects);
         unsubBatches = subscribe('batches', setBatches);
         unsubDepartments = subscribe('departments', setDepartments);
         unsubSchedule = subscribe('schedule', setSchedule);
-        unsubVersions = subscribe('schedule_versions', setVersions, true);
         
-        // Settings listener (expecting a single doc 'config' in 'settings' collection)
-        unsubSettings = onSnapshot(doc(firestore, 'settings', 'config'), (docSnap) => {
-            if (docSnap.exists()) {
-                // Merge with defaults to ensure robustness against partial data
+        unsubSettings = db!.collection('settings').doc('config').onSnapshot((docSnap) => {
+            if (docSnap.exists) {
                 setSettings(prev => ({ ...DEFAULT_SETTINGS, ...(docSnap.data() as Partial<TimetableSettings>) } as TimetableSettings));
-            } else {
-                // If doesn't exist, we can't create it without auth, but we can default
-                console.log("Settings config not found, using defaults.");
             }
         }, (error) => {
-             console.warn("Error fetching settings:", error.message);
+             if((error as any).code !== 'permission-denied') console.warn("Error fetching settings:", error.message);
         });
     };
 
-    // Initialize listeners immediately to allow public read access
-    setupListeners();
+    const setupAdminListeners = () => {
+        // Double check admin status before subscribing to avoid race conditions
+        if (!isAdmin) return; 
 
-    const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
-        setUser(currentUser);
-        if (currentUser) {
-            console.log("Authenticated:", currentUser.email);
-        } else {
-            console.log("User signed out / Public Mode.");
-            // We do NOT clear state on logout anymore to support public view
-        }
-        setLoading(false);
-    });
+        console.log("Initializing admin subscriptions...");
+        unsubVersions = subscribe('schedule_versions', setVersions, true);
+        unsubAdmins = subscribe('admins', setAdmins);
+    };
+
+    // Always run public listeners (they are allowed by rules 'if true')
+    setupPublicListeners();
+
+    // Only run admin listeners if we are confirmed admin
+    if (user && isAdmin) {
+        setupAdminListeners();
+    } else {
+        // Clear sensitive data if not admin
+        setVersions([]);
+        setAdmins([]);
+    }
 
     return () => {
-        unsubAuth();
         if (unsubFaculty) unsubFaculty();
         if (unsubRooms) unsubRooms();
         if (unsubSubjects) unsubSubjects();
@@ -189,25 +228,27 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (unsubSchedule) unsubSchedule();
         if (unsubSettings) unsubSettings();
         if (unsubVersions) unsubVersions();
+        if (unsubAdmins) unsubAdmins();
     };
-  }, []);
+  }, [user, isAdmin]); // Re-run when Admin status changes
 
   const login = async (email: string, pass: string) => {
       if (!auth) throw new Error("Auth not initialized");
-      await signInWithEmailAndPassword(auth, email, pass);
+      await auth.signInWithEmailAndPassword(email, pass);
   };
 
   const logout = async () => {
       if (!auth) return;
-      await signOut(auth);
+      await auth.signOut();
+      setVersions([]);
+      setAdmins([]);
+      setIsAdmin(false);
   };
 
-  // Enhanced Conflict Detection
+  // Enhanced Conflict Detection (Client side for instant feedback)
   const checkConflicts = () => {
     const newConflicts: ScheduleConflict[] = [];
     
-    // 1. Capacity Checks (Individual Entry)
-    // Check if assigned room is large enough for the batch
     schedule.forEach(entry => {
         const batch = batches.find(b => b.id === entry.batchId);
         const room = rooms.find(r => r.id === entry.roomId);
@@ -221,9 +262,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
     });
 
-    // 2. Overlap Checks (Group by Day-Slot for O(N) efficiency instead of O(N^2))
     const slotMap = new Map<string, ScheduleEntry[]>();
-    
     schedule.forEach(entry => {
         const key = `${entry.day}-${entry.slot}`;
         if (!slotMap.has(key)) slotMap.set(key, []);
@@ -232,51 +271,24 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     slotMap.forEach((entriesInSlot, key) => {
         if (entriesInSlot.length < 2) return;
-
-        // Compare every pair ONLY within this specific time slot
         for (let i = 0; i < entriesInSlot.length; i++) {
             for (let j = i + 1; j < entriesInSlot.length; j++) {
                 const entry1 = entriesInSlot[i];
                 const entry2 = entriesInSlot[j];
-
-                // A. Room Conflict
                 if (entry1.roomId === entry2.roomId) {
                     const roomName = rooms.find(r => r.id === entry1.roomId)?.name || 'Unknown Room';
-                    const b1 = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown';
-                    const b2 = batches.find(b => b.id === entry2.batchId)?.name || 'Unknown';
-                    
-                    newConflicts.push({
-                        type: 'ROOM',
-                        description: `Room ${roomName} double booked (${b1} vs ${b2})`,
-                        involvedIds: [entry1.id, entry2.id]
-                    });
+                    newConflicts.push({ type: 'ROOM', description: `Room ${roomName} double booked`, involvedIds: [entry1.id, entry2.id] });
                 }
-                
-                // B. Faculty Conflict (Intersection check for arrays)
                 const f1s = entry1.facultyIds || [];
                 const f2s = entry2.facultyIds || [];
                 const overlappingFaculty = f1s.filter(fId => f2s.includes(fId));
-                
                 if (overlappingFaculty.length > 0) {
-                    const fNames = overlappingFaculty.map(fid => faculty.find(f => f.id === fid)?.name).filter(Boolean).join(', ');
-                    const b1 = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown';
-                    const b2 = batches.find(b => b.id === entry2.batchId)?.name || 'Unknown';
-
-                    newConflicts.push({
-                        type: 'FACULTY',
-                        description: `Faculty ${fNames || 'Unknown'} double booked (${b1} vs ${b2})`,
-                        involvedIds: [entry1.id, entry2.id]
-                    });
+                    const fNames = overlappingFaculty.map(fid => faculty.find(f => f.id === fid)?.name).join(', ');
+                    newConflicts.push({ type: 'FACULTY', description: `Faculty ${fNames} double booked`, involvedIds: [entry1.id, entry2.id] });
                 }
-
-                // C. Batch Conflict (Batch cannot be in two places at once)
                 if (entry1.batchId === entry2.batchId) {
                      const bName = batches.find(b => b.id === entry1.batchId)?.name || 'Unknown Batch';
-                     newConflicts.push({
-                        type: 'BATCH',
-                        description: `Batch ${bName} has concurrent classes scheduled`,
-                        involvedIds: [entry1.id, entry2.id]
-                    });
+                     newConflicts.push({ type: 'BATCH', description: `Batch ${bName} has concurrent classes`, involvedIds: [entry1.id, entry2.id] });
                 }
             }
         }
@@ -289,199 +301,88 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     checkConflicts();
   }, [schedule, faculty, rooms, batches]);
 
-  // Generic helper to add data
-  const addToCollection = async <T extends { id: string }>(
-      collectionName: string, 
-      data: Omit<T, 'id'>, 
-      setter: React.Dispatch<React.SetStateAction<T[]>>
-  ) => {
+  // Generic helpers
+  const addToCollection = async <T extends { id: string }>(colName: string, data: Omit<T, 'id'>, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
       const id = Math.random().toString(36).substr(2, 9);
       const newItem = { ...data, id } as T;
-      
-      // Optimistic update
       setter(prev => [...prev, newItem]);
-
-      if (db) {
-          try {
-              await setDoc(doc(db, collectionName, id), newItem);
-          } catch (e) {
-              console.warn(`Failed to add to ${collectionName} in cloud`, e);
-          }
-      }
+      if (db && user && isAdmin) await db.collection(colName).doc(id).set(newItem);
   };
 
-  // Generic helper to update data
-  const updateInCollection = async <T extends { id: string }>(
-      collectionName: string, 
-      item: T, 
-      setter: React.Dispatch<React.SetStateAction<T[]>>
-  ) => {
-      // Optimistic update
+  const updateInCollection = async <T extends { id: string }>(colName: string, item: T, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
       setter(prev => prev.map(existing => existing.id === item.id ? item : existing));
-      
-      if (db) {
-          try {
-              const { id, ...data } = item;
-              await updateDoc(doc(db, collectionName, id), data as any);
-          } catch (e) {
-              console.warn(`Failed to update ${collectionName} in cloud`, e);
-          }
+      if (db && user && isAdmin) {
+          const { id, ...data } = item;
+          await db.collection(colName).doc(id).update(data);
       }
   };
 
-  // Generic helper to delete data
-  const deleteFromCollection = async <T extends { id: string }>(
-      collectionName: string, 
-      id: string, 
-      setter: React.Dispatch<React.SetStateAction<T[]>>
-  ) => {
-      console.log(`[Store] Optimistic delete for ID: ${id} from ${collectionName}`);
-      
-      // Optimistic update
+  const deleteFromCollection = async <T extends { id: string }>(colName: string, id: string, setter: React.Dispatch<React.SetStateAction<T[]>>) => {
       setter(prev => prev.filter(item => item.id !== id));
-      
-      if (db) {
-          try {
-              console.log(`[Store] Sending delete command to Firebase for ${collectionName}/${id}`);
-              await deleteDoc(doc(db, collectionName, id));
-              console.log(`[Store] Successfully deleted ${id} from cloud.`);
-          } catch (e) {
-              console.error(`[Store] FAILED to delete from ${collectionName} in cloud`, e);
-          }
-      } else {
-          console.warn("[Store] Database connection not available, delete is local-only.");
-      }
+      if (db && user && isAdmin) await db.collection(colName).doc(id).delete();
   };
 
-  // Update Settings
   const updateSettings = async (newSettings: TimetableSettings) => {
       setSettings(newSettings);
-      if (db) {
-          try {
-              await setDoc(doc(db, 'settings', 'config'), newSettings);
-          } catch (e) {
-              console.error("Failed to save settings", e);
-          }
-      }
+      if (db && user && isAdmin) await db.collection('settings').doc('config').set(newSettings);
   };
 
-  // CRUD Operations
+  // CRUD
   const addScheduleEntry = async (entry: ScheduleEntry) => {
      const id = entry.id || Math.random().toString(36).substr(2, 9);
      const newEntry = { ...entry, id };
-     
      setSchedule(prev => [...prev, newEntry]);
-     if (db) {
-        try {
-            const { ...data } = newEntry; 
-            await setDoc(doc(db, 'schedule', id), data);
-        } catch (e) { 
-            console.warn("Failed to add schedule entry to cloud", e);
-        }
+     if (db && user && isAdmin) {
+        const { ...data } = newEntry; 
+        await db.collection('schedule').doc(id).set(data);
      }
   };
 
-  const addFaculty = async (newFaculty: Omit<Faculty, 'id'>) => {
-    await addToCollection<Faculty>('faculty', newFaculty, setFaculty);
-  };
-  
-  const updateFaculty = async (faculty: Faculty) => {
-    await updateInCollection('faculty', faculty, setFaculty);
-  };
+  const addFaculty = (d: Omit<Faculty, 'id'>) => addToCollection('faculty', d, setFaculty);
+  const updateFaculty = (d: Faculty) => updateInCollection('faculty', d, setFaculty);
+  const deleteFaculty = (id: string) => deleteFromCollection('faculty', id, setFaculty);
 
-  const deleteFaculty = async (id: string) => {
-    await deleteFromCollection('faculty', id, setFaculty);
-  };
+  const addRoom = (d: Omit<Room, 'id'>) => addToCollection('rooms', d, setRooms);
+  const updateRoom = (d: Room) => updateInCollection('rooms', d, setRooms);
+  const deleteRoom = (id: string) => deleteFromCollection('rooms', id, setRooms);
 
-  const addRoom = async (newRoom: Omit<Room, 'id'>) => {
-    await addToCollection<Room>('rooms', newRoom, setRooms);
-  };
+  const addSubject = (d: Omit<Subject, 'id'>) => addToCollection('subjects', d, setSubjects);
+  const updateSubject = (d: Subject) => updateInCollection('subjects', d, setSubjects);
+  const deleteSubject = (id: string) => deleteFromCollection('subjects', id, setSubjects);
 
-  const updateRoom = async (room: Room) => {
-    await updateInCollection('rooms', room, setRooms);
-  };
+  const addBatch = (d: Omit<Batch, 'id'>) => addToCollection('batches', d, setBatches);
+  const updateBatch = (d: Batch) => updateInCollection('batches', d, setBatches);
+  const deleteBatch = (id: string) => deleteFromCollection('batches', id, setBatches);
 
-  const deleteRoom = async (id: string) => {
-    await deleteFromCollection('rooms', id, setRooms);
-  };
-
-  const addSubject = async (newSubject: Omit<Subject, 'id'>) => {
-    await addToCollection<Subject>('subjects', newSubject, setSubjects);
-  };
-
-  const updateSubject = async (subject: Subject) => {
-    await updateInCollection('subjects', subject, setSubjects);
-  };
-
-  const deleteSubject = async (id: string) => {
-    await deleteFromCollection('subjects', id, setSubjects);
-  };
-
-  const addBatch = async (newBatch: Omit<Batch, 'id'>) => {
-    await addToCollection<Batch>('batches', newBatch, setBatches);
-  };
-
-  const updateBatch = async (batch: Batch) => {
-    await updateInCollection('batches', batch, setBatches);
-  };
-
-  const deleteBatch = async (id: string) => {
-    await deleteFromCollection('batches', id, setBatches);
-  };
-
-  const addDepartment = async (newDept: Omit<Department, 'id'>) => {
-    await addToCollection<Department>('departments', newDept, setDepartments);
-  };
-
-  const updateDepartment = async (dept: Department) => {
-    await updateInCollection('departments', dept, setDepartments);
-  };
-
-  const deleteDepartment = async (id: string) => {
-    await deleteFromCollection('departments', id, setDepartments);
-  };
+  const addDepartment = (d: Omit<Department, 'id'>) => addToCollection('departments', d, setDepartments);
+  const updateDepartment = (d: Department) => updateInCollection('departments', d, setDepartments);
+  const deleteDepartment = (id: string) => deleteFromCollection('departments', id, setDepartments);
 
   const updateScheduleEntry = async (updatedEntry: ScheduleEntry) => {
     setSchedule(prev => prev.map(s => s.id === updatedEntry.id ? updatedEntry : s));
-
-    if (db) {
-        try {
-            const { id, ...data } = updatedEntry;
-            const docRef = doc(db, 'schedule', id);
-            await updateDoc(docRef, data as any);
-        } catch (e) { 
-             console.warn("Failed to update schedule entry in cloud", e);
-        }
+    if (db && user && isAdmin) {
+        const { id, ...data } = updatedEntry;
+        await db.collection('schedule').doc(id).update(data);
     }
   };
   
   const deleteScheduleEntry = async (id: string) => {
     setSchedule(prev => prev.filter(s => s.id !== id));
-
-    if (db) {
-        try {
-            await deleteDoc(doc(db, 'schedule', id));
-        } catch (e) { 
-             console.warn("Failed to delete schedule entry from cloud", e);
-        }
-    }
+    if (db && user && isAdmin) await db.collection('schedule').doc(id).delete();
   }
 
   const resetData = async () => {
-      if (confirm("Reset all schedule data? This will clear the timetable but keep your resources.")) {
+      if (!isAdmin) return;
+      if (confirm("Reset all schedule data?")) {
           setSchedule([]);
-          if (db) {
-              const firestore = db;
+          if (db && user) {
               setLoading(true);
               try {
-                const schSnapshot = await getDocs(collection(firestore, 'schedule'));
-                const batch = writeBatch(firestore);
-                schSnapshot.docs.forEach((doc) => {
-                    batch.delete(doc.ref);
-                });
+                // We'll use the backend for bulk delete if simpler, or just loop here
+                const schSnapshot = await db.collection('schedule').get();
+                const batch = db.batch();
+                schSnapshot.docs.forEach((doc) => batch.delete(doc.ref));
                 await batch.commit();
-              } catch(e) {
-                  console.warn("Cloud reset failed.", e);
               } finally {
                 setLoading(false);
               }
@@ -489,136 +390,106 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }
   }
 
-  // Bulk save generated schedule using batched writes
-  // supports targetBatchId for partial updates
+  // UPDATED: Save via Backend for Security
   const saveGeneratedSchedule = async (newSchedule: ScheduleEntry[], targetBatchId?: string) => {
+      if (!isAdmin) return;
       setLoading(true);
       
-      // 1. Optimistic Update
+      // Optimistic update for UI responsiveness
       if (targetBatchId) {
-          // Remove old entries for this batch, add new ones, keep others
-          setSchedule(prev => [
-              ...prev.filter(s => s.batchId !== targetBatchId), 
-              ...newSchedule
-          ]);
+          setSchedule(prev => [...prev.filter(s => s.batchId !== targetBatchId), ...newSchedule]);
       } else {
-          // Replace everything
           setSchedule(newSchedule);
       }
 
-      if (db) {
-          const firestore = db;
+      if (db && user) {
           try {
-              // 2. Identify what to delete
-              let q;
-              if (targetBatchId) {
-                  q = query(collection(firestore, 'schedule'), where('batchId', '==', targetBatchId));
-              } else {
-                  q = query(collection(firestore, 'schedule'));
-              }
-              
-              const snapshot = await getDocs(q);
-              
-              // Firestore batch limit is 500 operations
-              const CHUNK_SIZE = 400; 
-
-              // Delete in chunks
-              const deleteChunks = [];
-              for (let i = 0; i < snapshot.docs.length; i += CHUNK_SIZE) {
-                  deleteChunks.push(snapshot.docs.slice(i, i + CHUNK_SIZE));
-              }
-
-              for (const chunk of deleteChunks) {
-                  const batch = writeBatch(firestore);
-                  chunk.forEach(doc => batch.delete(doc.ref));
-                  await batch.commit();
-              }
-              
-              console.log(targetBatchId ? `Cleared existing schedule for batch ${targetBatchId}` : "Cleared master schedule.");
-
-              // 3. Write new schedule in chunks
-              const writeChunks = [];
-              for (let i = 0; i < newSchedule.length; i += CHUNK_SIZE) {
-                  writeChunks.push(newSchedule.slice(i, i + CHUNK_SIZE));
-              }
-
-              for (const chunk of writeChunks) {
-                  const batch = writeBatch(firestore);
-                  chunk.forEach(entry => {
-                      const docRef = doc(firestore, 'schedule', entry.id);
-                      batch.set(docRef, entry);
-                  });
-                  await batch.commit();
-              }
-
-              console.log("New schedule saved successfully.");
-
+              // Call secure backend function
+              await saveScheduleSecurely(newSchedule, targetBatchId);
+              console.log("Schedule saved securely via backend.");
           } catch (e) {
               console.error("Error saving generated schedule:", e);
-              alert("Error saving schedule to cloud. Check console for details.");
+              alert("Error saving schedule to cloud. See console.");
+              // Revert optimistic update? For now we assume eventual consistency
           } finally {
               setLoading(false);
           }
       } else {
           setLoading(false);
-          console.warn("Database not connected, schedule only saved locally.");
       }
   }
 
-  // Version Control Methods
   const saveVersion = async (name: string) => {
-      if (!db) {
-          alert("Cannot save versions in offline mode.");
-          return;
-      }
-      
-      try {
-          setLoading(true);
-          const versionId = Math.random().toString(36).substr(2, 9);
-          const newVersion: ScheduleVersion = {
-              id: versionId,
-              name,
-              createdAt: new Date().toISOString(),
-              entries: schedule
-          };
-          
-          await setDoc(doc(db, 'schedule_versions', versionId), newVersion);
-          setVersions(prev => [newVersion, ...prev]);
-          console.log("Version saved:", name);
-      } catch (e) {
-          console.error("Failed to save version:", e);
-          alert("Failed to save version.");
-      } finally {
-          setLoading(false);
-      }
+      if (!db || !user || !isAdmin) return;
+      setLoading(true);
+      const versionId = Math.random().toString(36).substr(2, 9);
+      const newVersion: ScheduleVersion = { id: versionId, name, createdAt: new Date().toISOString(), entries: schedule };
+      await db.collection('schedule_versions').doc(versionId).set(newVersion);
+      setVersions(prev => [newVersion, ...prev]);
+      setLoading(false);
   };
 
   const restoreVersion = async (versionId: string) => {
+      if (!isAdmin) return;
       const version = versions.find(v => v.id === versionId);
       if (!version) return;
-      
-      if (confirm(`Are you sure you want to restore "${version.name}"? This will overwrite the current live schedule.`)) {
-          // Full restore implies wiping everything and replacing, so no targetBatchId
+      if (confirm(`Restore "${version.name}"?`)) {
           await saveGeneratedSchedule(version.entries);
       }
   };
 
   const deleteVersion = async (versionId: string) => {
-      if (confirm("Are you sure you want to delete this saved version?")) {
+      if (!isAdmin) return;
+      if (confirm("Delete version?")) {
           await deleteFromCollection('schedule_versions', versionId, setVersions);
+      }
+  };
+
+  // ADMIN MANAGEMENT
+  const addAdmin = async (uid: string, email?: string) => {
+      if (!db || !user || !isAdmin) return;
+      // Using set to create the admin entry
+      const newAdmin: AdminProfile = {
+          id: uid,
+          email: email || '',
+          addedAt: new Date().toISOString()
+      };
+      // Optimistically update
+      setAdmins(prev => [...prev, newAdmin]);
+      
+      try {
+        await db.collection('admins').doc(uid).set(newAdmin);
+      } catch (err) {
+          console.error("Failed to add admin", err);
+          setAdmins(prev => prev.filter(a => a.id !== uid));
+          throw err;
+      }
+  };
+
+  const removeAdmin = async (uid: string) => {
+      if (!db || !user || !isAdmin) return;
+      // Optimistically update
+      setAdmins(prev => prev.filter(a => a.id !== uid));
+      try {
+        await db.collection('admins').doc(uid).delete();
+      } catch (err) {
+         console.error("Failed to remove admin", err);
+         // Revert on failure needs a refetch or careful state management
+         throw err;
       }
   };
 
   return (
     <StoreContext.Provider value={{
-      user, login, logout,
-      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots, versions,
+      user, isAdmin, login, logout,
+      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots, versions, admins,
       addScheduleEntry, updateScheduleEntry, deleteScheduleEntry, checkConflicts, resetData, saveGeneratedSchedule, loading,
       addFaculty, addRoom, addSubject, addBatch, addDepartment,
       updateFaculty, updateRoom, updateSubject, updateBatch, updateDepartment,
       deleteFaculty, deleteRoom, deleteSubject, deleteBatch, deleteDepartment,
       updateSettings,
-      saveVersion, restoreVersion, deleteVersion
+      saveVersion, restoreVersion, deleteVersion,
+      addAdmin, removeAdmin
     }}>
       {children}
     </StoreContext.Provider>

@@ -1,21 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../context/StoreContext';
-import { Clock, Calendar, Coffee, Plus, Trash2, Save, AlertCircle, Edit, X, CheckCircle } from 'lucide-react';
+import { Clock, Calendar, Coffee, Plus, Trash2, Save, AlertCircle, Edit, X, CheckCircle, Shield, UserPlus, Copy } from 'lucide-react';
 import { DAYS, Break } from '../types';
 import { clsx } from 'clsx';
 import { timeToMinutes } from '../core/TimeUtils';
 
 const Settings = () => {
-    const { settings, updateSettings } = useStore();
+    const { settings, updateSettings, user, isAdmin, admins, addAdmin, removeAdmin } = useStore();
     const [formData, setFormData] = useState(settings);
     
     // Break Management State
     const [breakForm, setBreakForm] = useState({ name: '', startTime: '', endTime: '' });
     const [editingBreakId, setEditingBreakId] = useState<string | null>(null);
     
+    // Admin Management State
+    const [newAdminId, setNewAdminId] = useState('');
+    const [newAdminEmail, setNewAdminEmail] = useState('');
+    
     const [isDirty, setIsDirty] = useState(false);
     const [mainMessage, setMainMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
     const [breakMessage, setBreakMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
+    const [adminMessage, setAdminMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
 
     // Sync form data with global settings on load
     useEffect(() => {
@@ -40,7 +45,6 @@ const Settings = () => {
     };
 
     const handleBreakSubmit = () => {
-        console.log("Attempting to add/update break:", breakForm);
         setBreakMessage(null);
 
         if (!breakForm.name || !breakForm.startTime || !breakForm.endTime) {
@@ -71,7 +75,6 @@ const Settings = () => {
              if (editingBreakId && b.id === editingBreakId) return false;
              const bStart = timeToMinutes(b.startTime);
              const bEnd = timeToMinutes(b.endTime);
-             // Standard overlap logic: StartA < EndB && EndA > StartB
              return start < bEnd && end > bStart;
         });
 
@@ -83,26 +86,18 @@ const Settings = () => {
         let updatedBreaks: Break[];
         
         if (editingBreakId) {
-            // Update existing break
             updatedBreaks = currentBreaks.map(b => 
-                b.id === editingBreakId 
-                    ? { ...b, ...breakForm } 
-                    : b
+                b.id === editingBreakId ? { ...b, ...breakForm } : b
             );
             setBreakMessage({ type: 'success', text: "Break updated. Save changes to apply." });
         } else {
-            // Add new break
             updatedBreaks = [...currentBreaks, { ...breakForm, id: Math.random().toString(36).substr(2, 9) }];
             setBreakMessage({ type: 'success', text: "Break added. Save changes to apply." });
         }
 
         handleChange('breaks', updatedBreaks);
-        
-        // Reset form
         setBreakForm({ name: '', startTime: '', endTime: '' });
         setEditingBreakId(null);
-        
-        // Clear message after delay
         setTimeout(() => setBreakMessage(null), 4000);
     };
 
@@ -143,17 +138,48 @@ const Settings = () => {
         await updateSettings(formData);
         setIsDirty(false);
         setMainMessage({ type: 'success', text: "Settings saved successfully! The schedule grid has been updated." });
-        
-        // Clear success message after 3s
         setTimeout(() => setMainMessage(null), 3000);
     };
 
+    // Admin Handlers
+    const handleAddAdmin = async () => {
+        if (!newAdminId) return;
+        try {
+            await addAdmin(newAdminId, newAdminEmail);
+            setAdminMessage({ type: 'success', text: "Admin added successfully." });
+            setNewAdminId('');
+            setNewAdminEmail('');
+        } catch (error) {
+            setAdminMessage({ type: 'error', text: "Failed to add admin. Permission denied." });
+        }
+        setTimeout(() => setAdminMessage(null), 3000);
+    };
+
+    const handleRemoveAdmin = async (uid: string) => {
+        if (uid === user?.uid) {
+            if (!confirm("Are you sure you want to remove yourself? You will lose access immediately.")) return;
+        }
+        try {
+            await removeAdmin(uid);
+            setAdminMessage({ type: 'success', text: "Admin removed." });
+        } catch (error) {
+             setAdminMessage({ type: 'error', text: "Failed to remove admin." });
+        }
+        setTimeout(() => setAdminMessage(null), 3000);
+    };
+
+    const copyToClipboard = (text: string) => {
+        navigator.clipboard.writeText(text);
+        setAdminMessage({ type: 'success', text: "UID copied to clipboard." });
+        setTimeout(() => setAdminMessage(null), 2000);
+    };
+
     return (
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-4xl mx-auto space-y-6 pb-20">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h2 className="text-2xl font-bold text-white">System Configuration</h2>
-                    <p className="text-slate-400">Define the temporal structure of your academic day.</p>
+                    <p className="text-slate-400">Define the temporal structure and security access.</p>
                 </div>
                 <button 
                     onClick={handleSave}
@@ -382,6 +408,106 @@ const Settings = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Access Control / Admin Management */}
+            {isAdmin && (
+                <div className="bg-glass border border-glassBorder rounded-2xl p-6 backdrop-blur-md">
+                     <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+                        <Shield size={20} className="text-emerald-400" />
+                        Access Control
+                    </h3>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {/* Admin List */}
+                        <div className="lg:col-span-2 space-y-3 order-2 lg:order-1">
+                             <div className="p-4 bg-slate-800/30 rounded-xl border border-slate-700 mb-4">
+                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">My Credentials</h4>
+                                <div className="flex items-center justify-between">
+                                    <div className="text-sm">
+                                        <span className="text-white block font-medium">{user?.email}</span>
+                                        <span className="text-slate-500 font-mono text-xs">{user?.uid}</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => copyToClipboard(user?.uid || '')}
+                                        className="p-2 hover:bg-white/10 rounded-lg text-slate-400 hover:text-white transition-colors"
+                                        title="Copy My UID"
+                                    >
+                                        <Copy size={16} />
+                                    </button>
+                                </div>
+                             </div>
+
+                             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-1">Authorized Admins</h4>
+                             {admins.length === 0 ? (
+                                 <div className="text-slate-500 italic text-sm p-2">Loading admins...</div>
+                             ) : (
+                                 admins.map(admin => (
+                                     <div key={admin.id} className="flex items-center justify-between p-3 border border-slate-700 bg-slate-900/40 rounded-lg">
+                                         <div>
+                                             {admin.email && <div className="text-sm font-medium text-slate-200">{admin.email}</div>}
+                                             <div className="text-xs font-mono text-slate-500">{admin.id}</div>
+                                         </div>
+                                         <button 
+                                            onClick={() => handleRemoveAdmin(admin.id)}
+                                            className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors"
+                                            title="Revoke Access"
+                                         >
+                                             <Trash2 size={16} />
+                                         </button>
+                                     </div>
+                                 ))
+                             )}
+                        </div>
+
+                        {/* Add Admin Form */}
+                        <div className="bg-slate-900/50 border border-slate-700 rounded-xl p-4 h-fit order-1 lg:order-2">
+                            <h4 className="text-sm font-semibold text-white mb-4">Add New Admin</h4>
+                            
+                            {adminMessage && (
+                                <div className={clsx(
+                                    "mb-3 p-2 rounded-lg text-xs flex items-center gap-2",
+                                    adminMessage.type === 'error' ? "bg-red-500/20 text-red-200" : "bg-emerald-500/20 text-emerald-200"
+                                )}>
+                                    {adminMessage.type === 'error' ? <AlertCircle size={14} /> : <CheckCircle size={14} />}
+                                    {adminMessage.text}
+                                </div>
+                            )}
+
+                            <div className="space-y-3">
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">User UID (Required)</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="Paste User UID"
+                                        value={newAdminId}
+                                        onChange={(e) => setNewAdminId(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary font-mono placeholder:font-sans"
+                                    />
+                                    <p className="text-[10px] text-slate-500 mt-1">Found in Firebase Console > Authentication</p>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-500 mb-1">Email (Optional Reference)</label>
+                                    <input 
+                                        type="text" 
+                                        placeholder="user@example.com"
+                                        value={newAdminEmail}
+                                        onChange={(e) => setNewAdminEmail(e.target.value)}
+                                        className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleAddAdmin}
+                                    disabled={!newAdminId}
+                                    className="w-full py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <UserPlus size={16} />
+                                    Grant Access
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

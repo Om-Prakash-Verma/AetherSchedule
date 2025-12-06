@@ -6,8 +6,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || "AIzaSyBUY6loo9nBGSOWlf3kl2kdwJaba0nq87Q"),
-      // Fallback for other potential uses, but API_KEY is the critical one
+      // API_KEY removed. It is now handled securely in Firebase Cloud Functions.
       'process.env': {} 
     },
     build: {

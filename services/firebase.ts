@@ -1,6 +1,8 @@
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getFirestore, Firestore } from 'firebase/firestore';
-import { getAuth, Auth } from 'firebase/auth';
+
+import firebase from 'firebase/compat/app';
+import 'firebase/compat/firestore';
+import 'firebase/compat/auth';
+import 'firebase/compat/functions';
 
 /**
  * FIREBASE CONFIGURATION
@@ -15,18 +17,31 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-let app: FirebaseApp | undefined;
-let db: Firestore | undefined;
-let auth: Auth | undefined;
+let app;
+let db: firebase.firestore.Firestore | undefined;
+let auth: firebase.auth.Auth | undefined;
+let functions: firebase.functions.Functions | undefined;
 
 try {
-    app = initializeApp(firebaseConfig);
-    // getFirestore connects to the default app instance
-    db = getFirestore(app);
-    auth = getAuth(app);
+    if (!firebase.apps.length) {
+        app = firebase.initializeApp(firebaseConfig);
+    } else {
+        app = firebase.app();
+    }
+    
+    db = app.firestore();
+    auth = app.auth();
+    functions = app.functions();
+
+    // Uncomment to use local emulator during development
+    // db.useEmulator("localhost", 8080);
+    // functions.useEmulator("localhost", 5001);
+    // auth.useEmulator("http://localhost:9099");
+
     console.log("Firebase initialized successfully");
 } catch (error) {
     console.error("Firebase initialization failed:", error);
 }
 
-export { db, auth };
+export { db, auth, functions };
+export default app;
