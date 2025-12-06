@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore } from '../context/StoreContext';
 import { generateTimeline } from '../core/TimeUtils';
-import { Search, Users, ArrowLeft, Clock, MapPin, User, GraduationCap, Coffee } from 'lucide-react';
+import { Search, Users, ArrowLeft, Clock, MapPin, User, GraduationCap, Coffee, Calendar } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Batch } from '../types';
 
@@ -152,27 +152,27 @@ const StudentPortal = () => {
     return (
         <div className="flex flex-col h-full space-y-6 animate-in slide-in-from-right-4 duration-300">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 sticky top-0 z-30 bg-slate-900/80 backdrop-blur-xl p-2 -m-2 mb-2 sm:static sm:bg-transparent sm:p-0 sm:m-0">
+                <div className="flex items-center gap-4 w-full">
                     <button 
                         onClick={() => setSelectedBatchId(null)}
-                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+                        className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors border border-slate-700"
                     >
                         <ArrowLeft size={20} />
                     </button>
-                    <div>
-                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-                            {selectedBatch?.name}
-                            <span className="text-sm font-normal text-slate-500 bg-slate-900 px-2 py-0.5 rounded-md border border-slate-800">Read Only</span>
-                        </h2>
-                        <div className="flex items-center gap-3 text-sm text-slate-400 mt-1">
-                            <span className="flex items-center gap-1.5">
-                                <Users size={14} /> {selectedBatch?.size} Students
+                    <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-xl md:text-2xl font-bold text-white">{selectedBatch?.name}</h2>
+                            <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500 bg-slate-950 border border-slate-800 px-2 py-0.5 rounded-md hidden xs:inline-block">Read Only</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 mt-1">
+                            <span className="flex items-center gap-1.5 bg-slate-800/50 px-2 py-0.5 rounded-md">
+                                <Users size={12} /> {selectedBatch?.size} Students
                             </span>
                             {selectedBatch?.fixedRoomId && (
-                                <span className="flex items-center gap-1.5">
-                                    <MapPin size={14} /> 
-                                    Home Room: <span className="text-slate-300">{rooms.find(r => r.id === selectedBatch?.fixedRoomId)?.name}</span>
+                                <span className="flex items-center gap-1.5 bg-slate-800/50 px-2 py-0.5 rounded-md">
+                                    <MapPin size={12} /> 
+                                    Home: <span className="text-slate-300">{rooms.find(r => r.id === selectedBatch?.fixedRoomId)?.name}</span>
                                 </span>
                             )}
                         </div>
@@ -180,7 +180,7 @@ const StudentPortal = () => {
                 </div>
             </div>
 
-            {/* Timetable Grid */}
+            {/* Timetable Grid (Visible on all screens with scroll) */}
             <div className="flex flex-1 rounded-2xl border border-glassBorder bg-slate-900/50 backdrop-blur-sm shadow-2xl overflow-hidden flex-col">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
                     <table className="w-full border-collapse min-w-[1000px]">
@@ -188,7 +188,7 @@ const StudentPortal = () => {
                             <tr>
                                 <th className="p-4 border-b border-r border-glassBorder bg-slate-950/80 text-left min-w-[120px] text-slate-400 font-medium sticky left-0 z-20 backdrop-blur-md">
                                     <div className="flex items-center gap-2">
-                                        <Clock size={16} />
+                                        <Calendar size={16} />
                                         <span>Day / Time</span>
                                     </div>
                                 </th>
@@ -216,7 +216,7 @@ const StudentPortal = () => {
                                             <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm">
                                                 {day.substring(0, 3)}
                                             </div>
-                                            <span className="hidden md:inline">{day}</span>
+                                            <span className="hidden xl:inline">{day}</span>
                                         </div>
                                     </td>
                                     {timeline.map((item, index) => {
@@ -234,11 +234,9 @@ const StudentPortal = () => {
                                         const slot = item.slotIndex!;
                                         const entry = getCellContent(day, slot);
                                         
-                                        // Helper to get resource details
                                         const subject = entry ? subjects.find(s => s.id === entry.subjectId) : null;
                                         const assignedRoom = entry ? rooms.find(r => r.id === entry.roomId) : null;
                                         
-                                        // Get Faculty Names for display
                                         const assignedFacultyIds = entry ? (entry.facultyIds || []) : [];
                                         const assignedFacultyNames = assignedFacultyIds.map(fid => faculty.find(f => f.id === fid)?.name).filter(Boolean);
                                         const assignedFacultyTooltip = assignedFacultyNames.join(', ');
@@ -247,11 +245,10 @@ const StudentPortal = () => {
                                             <td key={`${day}-${slot}`} className="p-2 border-b border-glassBorder h-32 align-top">
                                                 {entry ? (
                                                     <div className={clsx(
-                                                        "h-full w-full rounded-xl p-3 flex flex-col justify-between border shadow-sm",
+                                                        "h-full w-full rounded-xl p-3 flex flex-col justify-between border shadow-sm transition-transform hover:scale-[1.02]",
                                                         subject?.requiredRoomType === 'LAB' 
                                                             ? "bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/20" 
-                                                            : "bg-primary/10 border-primary/30 hover:bg-primary/20",
-                                                        "transition-colors"
+                                                            : "bg-primary/10 border-primary/30 hover:bg-primary/20"
                                                     )}>
                                                         <div>
                                                             <div className="flex justify-between items-start mb-1">
@@ -288,8 +285,8 @@ const StudentPortal = () => {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="h-full w-full rounded-xl border border-dashed border-slate-800 bg-slate-900/20 flex items-center justify-center">
-                                                        <span className="text-xs text-slate-600 font-medium">Free</span>
+                                                    <div className="h-full w-full rounded-xl border border-dashed border-slate-800 bg-slate-900/20 flex items-center justify-center group/free">
+                                                        <span className="text-xs text-slate-600 font-medium group-hover/free:text-slate-500 transition-colors">Free</span>
                                                     </div>
                                                 )}
                                             </td>

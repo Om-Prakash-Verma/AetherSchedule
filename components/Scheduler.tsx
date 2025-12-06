@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleEntry } from '../types';
-import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock, Coffee, MapPin, User } from 'lucide-react';
+import { Plus, X, Lock, Unlock, AlertTriangle, Sparkles, Loader2, Trash2, History, Save, RotateCcw, Clock, Coffee, MapPin, User, Calendar } from 'lucide-react';
 import { clsx } from 'clsx';
 import { chatWithScheduler, generateScheduleWithGemini } from '../services/geminiService';
 import { generateTimeline, TimelineItem } from '../core/TimeUtils';
@@ -150,9 +150,9 @@ const Scheduler = () => {
 
     return (
         <div className="flex flex-col h-full space-y-4 md:space-y-6">
-            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
+            <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 sticky top-0 z-30 bg-slate-900/80 backdrop-blur-xl p-2 -m-2 mb-2 sm:static sm:bg-transparent sm:p-0 sm:m-0">
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4 w-full xl:w-auto">
-                    <h2 className="text-xl md:text-2xl font-bold text-white whitespace-nowrap">Master Schedule</h2>
+                    <h2 className="text-xl md:text-2xl font-bold text-white whitespace-nowrap hidden sm:block">Master Schedule</h2>
                     <select 
                         value={selectedBatchId}
                         onChange={(e) => setSelectedBatchId(e.target.value)}
@@ -328,14 +328,17 @@ const Scheduler = () => {
                 </div>
             )}
 
-            {/* Timetable Grid - Horizontal Scroll Container */}
+            {/* Timetable Grid (Visible on all screens with scroll) */}
             <div className="flex flex-1 overflow-hidden rounded-xl border border-glassBorder bg-glass backdrop-blur-sm shadow-xl flex-col">
                 <div className="overflow-x-auto flex-1 custom-scrollbar">
-                    <table className="w-full border-collapse min-w-[800px]">
+                    <table className="w-full border-collapse min-w-[1000px]">
                         <thead>
                             <tr>
                                 <th className="p-3 md:p-4 border-b border-r border-glassBorder bg-slate-900/50 text-left min-w-[80px] md:min-w-[100px] text-slate-400 font-medium sticky left-0 z-20 backdrop-blur-md shadow-[4px_0_12px_-2px_rgba(0,0,0,0.5)]">
-                                    Day / Time
+                                    <div className="flex items-center gap-2">
+                                        <Calendar size={16} />
+                                        <span>Day / Time</span>
+                                    </div>
                                 </th>
                                 {timeline.map((item, index) => (
                                     <th 
@@ -357,7 +360,12 @@ const Scheduler = () => {
                             {safeWorkingDays.map(day => (
                                 <tr key={day} className="group hover:bg-white/5 transition-colors">
                                     <td className="p-3 md:p-4 border-r border-b border-glassBorder bg-slate-900/30 font-bold text-white sticky left-0 z-10 backdrop-blur-md shadow-[4px_0_12px_-2px_rgba(0,0,0,0.5)]">
-                                        {day}
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center text-sm">
+                                                {day.substring(0, 3)}
+                                            </div>
+                                            <span className="hidden xl:inline">{day}</span>
+                                        </div>
                                     </td>
                                     {timeline.map((item, index) => {
                                         if (item.type === 'BREAK') {
