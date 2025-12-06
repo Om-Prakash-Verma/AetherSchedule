@@ -202,7 +202,7 @@ const Analytics = () => {
         // Fallback if no departments defined, create from faculty data
         let depts = departments;
         if (depts.length === 0) {
-            const uniqueDepts = Array.from(new Set(faculty.map(f => f.department))).filter(Boolean);
+            const uniqueDepts = Array.from(new Set(faculty.map(f => f.department))).filter(Boolean) as string[];
             depts = uniqueDepts.map(d => ({ id: d, name: d, code: d.substring(0,3).toUpperCase() }));
         }
 
