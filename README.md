@@ -1,234 +1,208 @@
-# AetherSchedule - Intelligent Timetabling & Academic Simulation
+# AetherSchedule - Intelligent Timetabling & Academic Digital Twin
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-19.0-61DAFB.svg) ![AI](https://img.shields.io/badge/AI-Gemini%203.0%20Pro-8E75B2.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![React](https://img.shields.io/badge/React-19.2-61DAFB.svg) ![AI](https://img.shields.io/badge/AI-Gemini%203.0%20Pro-8E75B2.svg) ![Firebase](https://img.shields.io/badge/Firebase-10.0-FFCA28.svg)
 
 **AetherSchedule** is an enterprise-grade academic operations platform designed to solve the **University Course Timetabling Problem (UCTP)**—a classic NP-Hard combinatorial optimization problem.
 
-Unlike traditional heuristic algorithms (Genetic Algorithms, Simulated Annealing) which are computationally expensive and rigid, AetherSchedule leverages the **reasoning capabilities of Google Gemini 3.0 Pro** combined with a **Deterministic Repair Layer** to create a conflict-free, pedagogically sound schedule in seconds.
+It serves as a **Digital Twin** of an educational institution, digitizing resources (faculty, rooms, student batches) and leveraging **Neuro-Symbolic AI** to generate mathematically conflict-free schedules in seconds.
 
-It functions as a **Digital Twin** of an educational institution, modeling constraints, resource availability, and faculty preferences to simulate and optimize the academic week.
+---
+
+## 🌟 Key Differentiators
+
+| Feature | Traditional Schedulers | AetherSchedule |
+| :--- | :--- | :--- |
+| **Core Engine** | Genetic Algorithms / Integer Programming | **Gemini 3.0 Pro (Reasoning) + Deterministic Repair** |
+| **Conflict Handling** | Post-generation validation | **Real-time "Busy Mask" Prevention** |
+| **User Experience** | Static Spreadsheets | **Glassmorphism UI & Interactive Heatmaps** |
+| **Flexibility** | Rigid 1-hour slots | **Configurable Period Durations & Breaks** |
+| **Reliability** | Deterministic but slow | **Probabilistic Creativity + Deterministic Safety** |
 
 ---
 
 ## 🧠 System Architecture
 
-AetherSchedule employs a hybrid neuro-symbolic architecture. The "Neural" component (Gemini) handles the creative distribution and heuristic patterns, while the "Symbolic" component (Repair Layer) enforces hard mathematical constraints.
+AetherSchedule employs a hybrid **Neuro-Symbolic Architecture**.
+1.  **The Neural Layer (Gemini 3.0 Pro):** Handles the "Soft Constraints" (pedagogy, load balancing, pattern matching). It uses a **4096-token thinking budget** to simulate backtracking.
+2.  **The Symbolic Layer (Repair Engine):** A TypeScript-based deterministic algorithm that enforces "Hard Constraints" (physics, time, space) using a Greedy Slot Search.
 
 ```mermaid
 graph TD
-    subgraph Client_Side_Application ["🖥️ Client Application (React 19)"]
-        style Client_Side_Application fill:#1e293b,stroke:#6366f1,stroke-width:2px,color:#fff
-        
+    subgraph Client ["🖥️ Client Application (React 19)"]
+        style Client fill:#1e293b,stroke:#6366f1,stroke-width:2px,color:#fff
         UI["🎨 UI Layer (Glassmorphism)"]
-        Store["📦 State Store (Context API)"]
-        
-        subgraph Logic_Core ["⚙️ Logic Core"]
-            style Logic_Core fill:#0f172a,stroke:#94a3b8,color:#fff
-            Detect["🛡️ Conflict Detection Engine<br/>(O(N) Overlap Matrix)"]
-            Repair["🔧 Deterministic Repair Layer<br/>(Greedy Slot Search)"]
-            Sanitizer["🧹 Data Sanitizer<br/>(Circular Ref Prevention)"]
-        end
-        
-        UI -->|Dispatch Actions| Store
-        Store <--> Detect
+        Store["📦 Context Store"]
+        Validation["🛡️ Logic Core"]
     end
 
-    subgraph Cloud_Infrastructure ["☁️ Cloud Infrastructure (Firebase)"]
-        style Cloud_Infrastructure fill:#1e293b,stroke:#06b6d4,stroke-width:2px,color:#fff
-        
-        Firestore[("🔥 Cloud Firestore<br/>(NoSQL Database)")]
-        Auth["🔐 Firebase Auth"]
-        
-        Store <-->|Real-time Sync| Firestore
-        Store <-->|Auth Tokens| Auth
+    subgraph AI ["🧠 AI Core (Google Cloud)"]
+        style AI fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#fff
+        Thinking["⚡ Gemini 3.0 Pro<br/>(Reasoning Engine)"]
+        Chat["💬 Gemini 2.5 Flash<br/>(Copilot)"]
     end
 
-    subgraph Artificial_Intelligence ["🧠 Artificial Intelligence (Google Cloud)"]
-        style Artificial_Intelligence fill:#312e81,stroke:#a855f7,stroke-width:2px,color:#fff
-        
-        GeminiFlash["⚡ Gemini 2.5 Flash<br/>(Chat & Quick Analysis)"]
-        GeminiPro["🧠 Gemini 3.0 Pro<br/>(Deep Reasoning Scheduler)"]
-        
-        Sanitizer -->|Clean Context| GeminiFlash
-        Sanitizer -->|Constraint Prompts| GeminiPro
-        
-        GeminiPro -->|Raw JSON Schedule| Repair
-        Repair -->|Validated Schedule| Store
+    subgraph Backend ["🔥 Backend (Firebase)"]
+        style Backend fill:#0f172a,stroke:#06b6d4,stroke-width:2px,color:#fff
+        DB[("Firestore NoSQL")]
+        Auth["Authentication"]
     end
+
+    UI --> Store
+    Store --> Validation
+    Validation <-->|Sanitized Context| Thinking
+    Thinking -->|Raw JSON| Validation
+    Validation -->|Verified Schedule| Store
+    Store <-->|Real-time Sync| DB
 ```
 
 ---
 
-## 🔄 Algorithmic Workflow: The "Neuro-Symbolic" Loop
+## 🚀 Comprehensive Feature Breakdown
 
-How AetherSchedule guarantees 0% conflicts while optimizing for student wellbeing:
+### 1. 🤖 The Neuro-Symbolic Scheduler
+Located in `services/geminiService.ts`, this is the heart of the application.
+*   **Context Injection**: The system serializes the entire university state (Rooms, Faculty, Constraints) into a JSON context.
+*   **Circular Reference Sanitization**: A custom `cleanDataForAI` function strips circular dependencies (e.g., Faculty -> Subject -> Faculty) to prevent JSON serialization errors before sending to the API.
+*   **Reasoning Loop**:
+    1.  **Analysis**: Gemini 3.0 Pro analyzes the topology of the week.
+    2.  **Strategy**: It identifies "Big Rocks" (Labs, fixed rooms) first.
+    3.  **Distribution**: It spreads lectures to avoid "Hell Days" (overloaded schedules).
+*   **Fallback Mechanism**: If the heavy reasoning model times out, the system automatically degrades to **Gemini 2.5 Flash** for a faster, albeit less optimized, result.
+
+### 2. 🛡️ Deterministic Repair Layer
+Located in `validateAndRepairSchedule`, this layer guarantees **0% Conflicts**.
+*   **The Busy Matrix**: A 3D Boolean Matrix `Matrix[Day][Slot][ResourceID]` is constructed from all existing schedules.
+*   **Virtual Collision Check**: Before any slot is finalized, the system checks if the coordinate `(d, s)` is occupied in the Busy Matrix.
+*   **Greedy Search**: If the AI hallucinates a double-booking, the Repair Layer iterates through `(d, s+1)`, `(d+1, s)`, etc., until a valid empty slot is found.
+
+### 3. 📊 Operational Analytics Engine
+Located in `components/Analytics.tsx`, using **Recharts**.
+*   **Congestion Heatmap**: A visual grid (Days x Slots) where color intensity represents campus density. Helps identifying bottlenecks (e.g., "Tuesday Morning is 95% full").
+*   **Departmental Radar**: A Spider Chart comparing Faculty Headcount vs. Course Load per department.
+*   **Efficiency Gauges**: 
+    *   *Room Efficiency*: (Occupied Slots / Total Capacity).
+    *   *Faculty Saturation*: (Teaching Hours / Contract Hours).
+*   **Curriculum Distribution**: Pie chart showing Lecture vs. Laboratory balance.
+
+### 4. 🗂️ Advanced Data Management
+Located in `components/DataManagement.tsx`.
+*   **Smart Import/Export**: 
+    *   Exports the entire database as a JSON backup.
+    *   **Intelligent ID Migration**: When importing, the system detects ID collisions and auto-generates new IDs (`FAC-JOHN-DOE-X9A`) while preserving relational integrity between Faculty and Subjects.
+*   **Batch Operations**: Optimistic UI updates ensure the interface feels instant, while Firestore batch writes (chunked into 400-doc batches) handle the backend sync.
+
+### 5. 🏫 Public Portals
+*   **Student Portal**: Read-only view for students. Features infinite scrolling and fuzzy search by batch name.
+*   **Faculty Portal**: Dedicated view for professors to see their personal teaching load and room assignments.
+*   **Security**: Portals use `Public Layout` and restricted Firestore rules (read-only) to ensure data safety.
+
+### 6. ⚙️ Temporal Configuration
+Located in `components/Settings.tsx`.
+*   **Dynamic Time Slots**: Unlike rigid schedulers, you can define the `College Start Time` (e.g., 08:30) and `Period Duration` (e.g., 45 mins). The entire grid recalculates automatically.
+*   **Break Management**: Define named breaks (e.g., "Lunch", "Morning Recess"). These become "No-Fly Zones" for the AI scheduler.
+
+---
+
+## 🛠️ Technical Implementation Details
+
+### Data Models (`types.ts`)
+*   **ScheduleEntry**: The atomic unit. Contains `{ day, slot, subjectId, facultyIds[], roomId, batchId }`.
+*   **Batch**: Represents a class of students. Contains a curriculum (`subjectAssignments`) mapping Subjects to specific Faculty.
+
+### Firebase Security Rules (`firestore.rules`)
+*   **Admins**: Full `write` access to all collections.
+*   **Public**: `read` access to Schedule, Faculty, Rooms (for Portals).
+*   **Validation**: Rules enforce data types (e.g., `capacity` must be a number).
+
+### Performance Optimization
+*   **WeakSet Sanitization**: Used in AI payload generation to handle complex object graphs.
+*   **O(N) Conflict Detection**: The conflict detector maps entries to a `Day-Slot` key map instead of nested loops, reducing complexity from O(N²) to O(N).
+*   **React Context**: Global state management prevents prop-drilling and ensures instant UI feedback.
+
+---
+
+## 🔄 The Scheduling Workflow
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Admin
-    participant Store as State Store
-    participant Prompt as Prompt Engineer
-    participant Model as Gemini 3.0 Pro
+    actor User
+    participant App
+    participant AI as Gemini 3.0 Pro
     participant Repair as Repair Layer
     participant DB as Firestore
 
-    Admin->>Store: Select Batch & Click "Auto-Schedule"
+    User->>App: Click "Auto-Schedule Batch A"
     
-    rect rgb(230, 240, 255)
-        Note right of Store: Phase 1: Context Aggregation
-        Store->>Store: Fetch Faculty (Preferences)
-        Store->>Store: Fetch Rooms (Capacity/Type)
-        Store->>Store: Fetch Subjects (Lab vs Lecture)
-        Store->>Store: 🚧 Build "Busy Mask" from overlapping Batches
+    rect #eff6ff
+        Note right of App: Pre-Processing
+        App->>App: Fetch Batch A Curriculum
+        App->>App: Fetch Existing Schedule (Batches B, C, D)
+        App->>App: Create "Busy Mask" from B, C, D
     end
 
-    Store->>Prompt: Payload: Resources + Global Constraints
-    Prompt->>Model: REST Request (Thinking Budget: 4096 Tokens)
+    App->>AI: Send Curriculum + Busy Mask + Constraints
     
-    rect rgb(240, 230, 255)
-        Note right of Model: Phase 2: AI Reasoning (UCTP)
-        Model->>Model: 🧠 Step 1: Identify "Big Rocks" (Labs/Fixed Rooms)
-        Model->>Model: 🧠 Step 2: Place Anchors (Consecutive Slots)
-        Model->>Model: 🧠 Step 3: Distribute Lectures (Avoid "Hell Days")
-        Model->>Model: 🧠 Step 4: Virtual Collision Check against Mask
-        Model-->>Prompt: Return Raw JSON Schedule Array
+    rect #eef2ff
+        Note right of AI: Neuro-Symbolic Reasoning
+        AI->>AI: analyzeTopology()
+        AI->>AI: placeHardConstraints(Labs)
+        AI->>AI: distributeSoftConstraints(Lectures)
+        AI-->>App: Return Draft JSON
     end
+
+    App->>Repair: Validate Draft against Busy Mask
     
-    Prompt->>Repair: Input Raw Schedule
-    
-    rect rgb(230, 255, 240)
-        Note right of Repair: Phase 3: Deterministic Verification
-        loop For Each Entry
-            Repair->>Repair: 🔍 Query Busy Matrix [Day, Slot, Resources]
-            alt Conflict Detected (Double Booking)
-                Repair->>Repair: ⚠️ Scan for nearest Empty Slot (d, s)
-                Repair->>Repair: ♻️ Move Entry -> New Slot
-                Repair->>Repair: 📝 Log Conflict Resolution
-            else Safe
-                Repair->>Repair: ✅ Lock Entry into Matrix
+    rect #f0fdf4
+        Note right of Repair: Deterministic Fix
+        loop Every Entry
+            Repair->>Repair: Check Collision
+            alt Collision Found
+                Repair->>Repair: Find Nearest Empty Slot
+                Repair->>Repair: Move Entry
             end
-            Repair->>Repair: Update Busy Matrix
         end
     end
-    
-    Repair->>Store: Update Local State
-    Store->>DB: Batch Write (Atomic Commit)
-    DB-->>Admin: Update UI (Real-time Render)
+
+    Repair-->>App: Final Schedule
+    App->>DB: Batch Write (Atomic)
+    DB-->>User: Update Grid
 ```
 
 ---
 
-## 📐 Constraint Logic Specification
-
-AetherSchedule models the university environment using three tiers of constraints.
-
-### 🔴 Tier 1: Hard Constraints (Inviolable)
-*These must be satisfied for the schedule to be valid.*
-1.  **Resource Uniqueness**: A `Faculty` member cannot teach two classes simultaneously.
-2.  **Space Uniqueness**: A `Room` cannot host two batches simultaneously.
-3.  **Batch Singularity**: A `Batch` of students cannot attend two subjects at once.
-4.  **Room Suitability**: Laboratory subjects (`requiredRoomType: 'LAB'`) must be scheduled in rooms with `type: 'LAB'`.
-5.  **Capacity Check**: `Batch.size` must not exceed `Room.capacity`.
-
-### 🟡 Tier 2: Pedagogical Constraints (High Priority)
-*The AI attempts to satisfy these to ensure academic quality.*
-1.  **Lab Continuity**: Laboratory sessions should occupy consecutive slots (e.g., Slot 1 & 2) to allow for setup and cleanup.
-2.  **Faculty Load Balancing**: A faculty member should not have more than `maxHoursPerDay` (default: 4) hours of teaching per day.
-3.  **Subject Distribution**: Lectures for the same subject should be spread across the week (e.g., Mon, Wed, Fri) rather than clustered in one day.
-
-### 🟢 Tier 3: Soft Constraints (Optimization)
-*Used to improve the "Quality Score" of the schedule.*
-1.  **Gap Minimization**: Minimize "Swiss Cheese" schedules (1-hour gaps between classes) for students.
-2.  **Preferred Slots**: Schedule senior faculty during their `preferredSlots` (e.g., Morning) if possible.
-3.  **Room Stability**: Attempt to keep a batch in their "Home Room" for lecture subjects to reduce student movement.
-
----
-
-## 🛡️ The Repair Layer (Safety Net)
-
-Large Language Models (LLMs) are probabilistic engines. While Gemini 3.0 Pro is excellent at reasoning, it can occasionally "hallucinate" a slot assignment that conflicts with an existing entry, especially in dense schedules.
-
-To ensure **Enterprise Reliability**, we implemented a deterministic TypeScript layer that runs *after* the AI generation.
-
-### Algorithm
-1.  **Input**: The AI-generated schedule + The "Busy Mask" (existing schedules of other batches).
-2.  **Matrix Construction**: Builds a 3D boolean matrix `Busy[Day][Slot][ResourceID]`.
-3.  **Iterative Validation**:
-    *   For every entry, check if `RoomID` or `FacultyID` is already marked `True` in the matrix for `[Day][Slot]`.
-4.  **Greedy Repair**:
-    *   If a conflict is found, the algorithm searches `[Day][Slot+1]`, `[Day][Slot-1]`, then `[Day+1][Slot]` until a free coordinate is found.
-    *   The entry is moved, and the conflict is logged.
-5.  **Output**: A mathematically guaranteed conflict-free schedule.
-
----
-
-## 📊 Real-time Analytics Engine
-
-The platform visualizes the health of the institution using **Recharts**:
-
-*   **Utilization Gauges**: Tracks `Room Efficiency` (Occupied Slots / Total Capacity) and `Faculty Saturation`.
-*   **Congestion Heatmap**: A temporal grid showing campus density. Red hotspots indicate time slots where almost all rooms are in use, warning administrators of potential bottlenecks.
-*   **Departmental Radar**: Visualizes the balance between faculty headcount and course load across departments.
-
----
-
-## 🛠️ Tech Stack
-
-| Component | Technology | Version | Description |
-|-----------|------------|---------|-------------|
-| **Frontend** | React | 19.2.0 | Core UI Library (Hooks, Context) |
-| **Language** | TypeScript | 5.0+ | Strict type safety for complex data models |
-| **Build Tool** | Vite | 5.0+ | HMR and optimized builds |
-| **Styling** | Tailwind CSS | 3.4+ | Utility-first styling with custom config |
-| **AI SDK** | @google/genai | 1.30.0 | Direct interface to Gemini API |
-| **Database** | Firebase Firestore | 10+ | NoSQL Real-time Database |
-| **Auth** | Firebase Auth | 10+ | Secure Email/Password authentication |
-| **Icons** | Lucide React | Latest | Modern, clean SVG icons |
-| **Charts** | Recharts | 2.12+ | Composable chart library |
-
----
-
-## 🚀 Installation & Setup
+## 💻 Installation & Setup
 
 ### Prerequisites
-- Node.js 18+
-- A Google Cloud Project with Gemini API enabled.
-- A Firebase Project.
+1.  **Node.js 18+**
+2.  **Google Cloud API Key** (Enabled for Gemini API).
+3.  **Firebase Project** (Firestore enabled).
 
-### 1. Clone & Install
-```bash
-git clone https://github.com/your-username/AetherSchedule.git
-cd AetherSchedule
-npm install
-```
-
-### 2. Environment Configuration
-Create a `.env` file in the root directory:
+### Step 1: Environment Variables
+Create a `.env` file:
 ```env
-# Google Gemini API Key
-API_KEY=your_gemini_api_key_here
+API_KEY=your_google_gemini_api_key
 ```
-*Note: The Firebase configuration is currently embedded in `services/firebase.ts`. For production, move these to environment variables as well.*
 
-### 3. Run Development Server
+### Step 2: Firebase Config
+Update `services/firebase.ts` with your project credentials:
+```typescript
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  // ...
+};
+```
+
+### Step 3: Install & Run
 ```bash
+npm install
 npm run dev
 ```
-Access the app at `http://localhost:5173`.
-
----
-
-## 🤝 Contributing
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ---
 
 ## 📄 License
 
-Distributed under the MIT License. See `LICENSE` for more information.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
