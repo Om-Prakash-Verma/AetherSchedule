@@ -6,9 +6,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
-      'process.env.API_KEY': JSON.stringify(env.API_KEY || "AIzaSyBUY6loo9nBGSOWlf3kl2kdwJaba0nq87Q"),
-      // Fallback for other potential uses, but API_KEY is the critical one
-      'process.env': {} 
+      // Expose the API Key to the frontend securely during build/dev
+      'process.env.API_KEY': JSON.stringify(env.API_KEY) 
     },
     build: {
       outDir: 'dist',

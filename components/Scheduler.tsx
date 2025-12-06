@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../context/StoreContext';
 import { ScheduleEntry } from '../types';
@@ -109,7 +110,7 @@ const Scheduler = () => {
         setIsGenerating(true);
 
         try {
-            console.log(`Requesting schedule for Batch ID: ${selectedBatchId}...`);
+            console.log(`Starting Client-Side Generation for Batch ID: ${selectedBatchId}...`);
             
             // Get the schedule of OTHER batches to use as a "Busy Mask"
             // This prevents the AI from double-booking teachers/rooms that are already taken by other batches
@@ -132,9 +133,9 @@ const Scheduler = () => {
             // Save only for this batch, preserving others
             await saveGeneratedSchedule(newEntries, selectedBatchId);
             
-        } catch (error) {
+        } catch (error: any) {
             console.error("Generation failed:", error);
-            alert("An error occurred during AI schedule generation. Please check the API key and try again.");
+            alert(`Error during generation: ${error.message || "Unknown error"}. Please check your API Key and try again.`);
         } finally {
             setIsGenerating(false);
         }
