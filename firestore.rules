@@ -16,53 +16,59 @@ service cloud.firestore {
     
     // --- Collection Rules ---
 
-    // 1. Faculty: Public Read, Admin Write, Schema Validation
+    // 1. Faculty: Public Read, Admin Write
     match /faculty/{docId} {
       allow read: if true;
-      allow write: if isAdmin() 
+      allow create, update: if isAdmin() 
                    && isString(request.resource.data.name)
                    && isString(request.resource.data.department);
+      allow delete: if isAdmin();
     }
 
-    // 2. Rooms: Public Read, Admin Write, Schema Validation
+    // 2. Rooms: Public Read, Admin Write
     match /rooms/{docId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
                    && isString(request.resource.data.name)
                    && isNumber(request.resource.data.capacity);
+      allow delete: if isAdmin();
     }
 
-    // 3. Subjects: Public Read, Admin Write, Schema Validation
+    // 3. Subjects: Public Read, Admin Write
     match /subjects/{docId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
                    && isString(request.resource.data.name)
                    && isString(request.resource.data.code);
+      allow delete: if isAdmin();
     }
 
-    // 4. Batches: Public Read, Admin Write, Schema Validation
+    // 4. Batches: Public Read, Admin Write
     match /batches/{docId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
                    && isString(request.resource.data.name);
+      allow delete: if isAdmin();
     }
 
-    // 5. Departments: Public Read, Admin Write, Schema Validation
+    // 5. Departments: Public Read, Admin Write
     match /departments/{docId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
                    && isString(request.resource.data.name);
+      allow delete: if isAdmin();
     }
 
-    // 6. Schedule: Public Read, Admin Write, Schema Validation
+    // 6. Schedule: Public Read, Admin Write
     match /schedule/{docId} {
       allow read: if true;
-      allow write: if isAdmin()
+      allow create, update: if isAdmin()
                    && isString(request.resource.data.day)
                    && isNumber(request.resource.data.slot)
                    && isString(request.resource.data.batchId)
                    && isString(request.resource.data.roomId)
                    && isString(request.resource.data.subjectId);
+      allow delete: if isAdmin();
     }
 
     // 7. Settings: Public Read, Admin Write

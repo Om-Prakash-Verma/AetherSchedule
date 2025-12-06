@@ -108,7 +108,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       (error) => {
         // Suppress generic permission errors in console for public/guest users
         if (error.code !== 'permission-denied') {
-            // console.warn(`Error listening to ${collectionName}:`, error.message);
+            console.warn(`Error listening to ${collectionName}:`, error.message);
         }
       }
     );
@@ -144,7 +144,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 setSettings(prev => ({ ...DEFAULT_SETTINGS, ...(docSnap.data() as Partial<TimetableSettings>) } as TimetableSettings));
             }
         }, (error) => {
-             // console.warn("Error fetching settings:", error.message);
+             console.warn("Error fetching settings:", error.message);
         });
     };
 
@@ -223,8 +223,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (db) {
           try {
               await setDoc(doc(db, collectionName, id), newItem);
-          } catch (e) {
-              // Fail silently or handle error in UI notification system
+          } catch (e: any) {
+              console.error(`Error adding to ${collectionName}:`, e);
+              // Revert optimistic update? For now we just log
+              alert(`Failed to add item. Check console.`);
           }
       }
   };
@@ -242,8 +244,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           try {
               const { id, ...data } = item;
               await updateDoc(doc(db, collectionName, id), data as any);
-          } catch (e) {
-              // Fail silently
+          } catch (e: any) {
+              console.error(`Error updating ${collectionName}:`, e);
+              alert(`Failed to update item. Check console.`);
           }
       }
   };
@@ -260,8 +263,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (db) {
           try {
               await deleteDoc(doc(db, collectionName, id));
-          } catch (e) {
-             // Fail silently
+          } catch (e: any) {
+             console.error(`Error deleting from ${collectionName}:`, e);
+             alert(`Failed to delete item from cloud. Permission denied or network error.`);
+             // Ideally revert state here, but simple alert for now
           }
       }
   };
@@ -272,8 +277,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       if (db) {
           try {
               await setDoc(doc(db, 'settings', 'config'), newSettings);
-          } catch (e) {
-              // Fail silently
+          } catch (e: any) {
+              console.error("Error updating settings:", e);
           }
       }
   };
@@ -290,7 +295,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { ...data } = newEntry; 
             await setDoc(doc(db, 'schedule', id), data);
         } catch (e) { 
-            // Fail silently
+            console.error("Error adding schedule entry:", e);
         }
      }
   };
@@ -370,7 +375,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const docRef = doc(db, 'schedule', id);
             await updateDoc(docRef, data as any);
         } catch (e) { 
-             // Fail silently
+             console.error("Error updating schedule entry:", e);
         }
     }
   };
@@ -382,7 +387,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             await deleteDoc(doc(db, 'schedule', id));
         } catch (e) { 
-             // Fail silently
+             console.error("Error deleting schedule entry:", e);
         }
     }
   }
