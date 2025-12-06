@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion } from '../types';
+import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, AppData } from '../types';
 import { db, auth } from '../services/firebase';
 import { 
     collection, 
@@ -41,7 +41,6 @@ interface StoreState {
   conflicts: ScheduleConflict[];
   settings: TimetableSettings;
   generatedSlots: string[]; // Computed from settings
-  versions: ScheduleVersion[]; // Version History
   
   addScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
   updateScheduleEntry: (entry: ScheduleEntry) => Promise<void>;
@@ -70,11 +69,7 @@ interface StoreState {
   checkConflicts: () => void;
   resetData: () => void;
   saveGeneratedSchedule: (newSchedule: ScheduleEntry[], targetBatchId?: string) => Promise<void>;
-  
-  // Version Control
-  saveVersion: (name: string) => Promise<void>;
-  restoreVersion: (versionId: string) => Promise<void>;
-  deleteVersion: (versionId: string) => Promise<void>;
+  importData: (data: AppData) => Promise<void>;
 
   // Auth
   login: (email: string, pass: string) => Promise<void>;
@@ -84,6 +79,22 @@ interface StoreState {
 }
 
 const StoreContext = createContext<StoreState | undefined>(undefined);
+
+// Helper to generate readable IDs
+// Format: PREFIX-SLUG-SUFFIX (e.g., FAC-JOHN-DOE-X9A)
+const generateReadableId = (prefix: string, name: string): string => {
+    const slug = name
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]+/g, '-') // Replace non-alphanumeric with hyphens
+        .replace(/^-+|-+$/g, '') // Remove leading/trailing hyphens
+        .substring(0, 20); // Limit slug length
+    
+    // Add short random suffix to ensure uniqueness even if names are identical
+    const suffix = Math.random().toString(36).substring(2, 5).toUpperCase();
+    
+    return `${prefix}-${slug}-${suffix}`;
+};
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -95,7 +106,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [schedule, setSchedule] = useState<ScheduleEntry[]>([]);
   const [conflicts, setConflicts] = useState<ScheduleConflict[]>([]);
   const [settings, setSettings] = useState<TimetableSettings>(DEFAULT_SETTINGS);
-  const [versions, setVersions] = useState<ScheduleVersion[]>([]);
   
   const [loading, setLoading] = useState(true);
 
@@ -120,7 +130,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         setter(data);
       }, 
       (error) => {
-        console.warn(`Error listening to ${collectionName}:`, error.message);
+        // Suppress generic permission errors in console for public/guest users
+        if (error.code !== 'permission-denied') {
+            // console.warn(`Error listening to ${collectionName}:`, error.message);
+        }
       }
     );
   };
@@ -139,29 +152,23 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let unsubDepartments: () => void;
     let unsubSchedule: () => void;
     let unsubSettings: () => void;
-    let unsubVersions: () => void;
 
     const setupListeners = () => {
-        console.log("Setting up data listeners...");
         unsubFaculty = subscribe('faculty', setFaculty);
         unsubRooms = subscribe('rooms', setRooms);
         unsubSubjects = subscribe('subjects', setSubjects);
         unsubBatches = subscribe('batches', setBatches);
         unsubDepartments = subscribe('departments', setDepartments);
         unsubSchedule = subscribe('schedule', setSchedule);
-        unsubVersions = subscribe('schedule_versions', setVersions, true);
         
         // Settings listener (expecting a single doc 'config' in 'settings' collection)
         unsubSettings = onSnapshot(doc(firestore, 'settings', 'config'), (docSnap) => {
             if (docSnap.exists()) {
                 // Merge with defaults to ensure robustness against partial data
                 setSettings(prev => ({ ...DEFAULT_SETTINGS, ...(docSnap.data() as Partial<TimetableSettings>) } as TimetableSettings));
-            } else {
-                // If doesn't exist, we can't create it without auth, but we can default
-                console.log("Settings config not found, using defaults.");
             }
         }, (error) => {
-             console.warn("Error fetching settings:", error.message);
+             // console.warn("Error fetching settings:", error.message);
         });
     };
 
@@ -170,12 +177,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
         setUser(currentUser);
-        if (currentUser) {
-            console.log("Authenticated:", currentUser.email);
-        } else {
-            console.log("User signed out / Public Mode.");
-            // We do NOT clear state on logout anymore to support public view
-        }
         setLoading(false);
     });
 
@@ -188,7 +189,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (unsubDepartments) unsubDepartments();
         if (unsubSchedule) unsubSchedule();
         if (unsubSettings) unsubSettings();
-        if (unsubVersions) unsubVersions();
     };
   }, []);
 
@@ -289,13 +289,13 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     checkConflicts();
   }, [schedule, faculty, rooms, batches]);
 
-  // Generic helper to add data
+  // Generic helper to add data with explicit ID
   const addToCollection = async <T extends { id: string }>(
       collectionName: string, 
+      id: string,
       data: Omit<T, 'id'>, 
       setter: React.Dispatch<React.SetStateAction<T[]>>
   ) => {
-      const id = Math.random().toString(36).substr(2, 9);
       const newItem = { ...data, id } as T;
       
       // Optimistic update
@@ -305,7 +305,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           try {
               await setDoc(doc(db, collectionName, id), newItem);
           } catch (e) {
-              console.warn(`Failed to add to ${collectionName} in cloud`, e);
+              // Fail silently or handle error in UI notification system
           }
       }
   };
@@ -324,7 +324,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
               const { id, ...data } = item;
               await updateDoc(doc(db, collectionName, id), data as any);
           } catch (e) {
-              console.warn(`Failed to update ${collectionName} in cloud`, e);
+              // Fail silently
           }
       }
   };
@@ -335,21 +335,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       id: string, 
       setter: React.Dispatch<React.SetStateAction<T[]>>
   ) => {
-      console.log(`[Store] Optimistic delete for ID: ${id} from ${collectionName}`);
-      
       // Optimistic update
       setter(prev => prev.filter(item => item.id !== id));
       
       if (db) {
           try {
-              console.log(`[Store] Sending delete command to Firebase for ${collectionName}/${id}`);
               await deleteDoc(doc(db, collectionName, id));
-              console.log(`[Store] Successfully deleted ${id} from cloud.`);
           } catch (e) {
-              console.error(`[Store] FAILED to delete from ${collectionName} in cloud`, e);
+             // Fail silently
           }
-      } else {
-          console.warn("[Store] Database connection not available, delete is local-only.");
       }
   };
 
@@ -360,14 +354,15 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           try {
               await setDoc(doc(db, 'settings', 'config'), newSettings);
           } catch (e) {
-              console.error("Failed to save settings", e);
+              // Fail silently
           }
       }
   };
 
   // CRUD Operations
   const addScheduleEntry = async (entry: ScheduleEntry) => {
-     const id = entry.id || Math.random().toString(36).substr(2, 9);
+     // For schedule entries, a random ID is acceptable, but let's make it consistent
+     const id = entry.id || `SCH-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
      const newEntry = { ...entry, id };
      
      setSchedule(prev => [...prev, newEntry]);
@@ -376,13 +371,14 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const { ...data } = newEntry; 
             await setDoc(doc(db, 'schedule', id), data);
         } catch (e) { 
-            console.warn("Failed to add schedule entry to cloud", e);
+            // Fail silently
         }
      }
   };
 
   const addFaculty = async (newFaculty: Omit<Faculty, 'id'>) => {
-    await addToCollection<Faculty>('faculty', newFaculty, setFaculty);
+    const id = generateReadableId('FAC', newFaculty.name);
+    await addToCollection<Faculty>('faculty', id, newFaculty, setFaculty);
   };
   
   const updateFaculty = async (faculty: Faculty) => {
@@ -394,7 +390,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addRoom = async (newRoom: Omit<Room, 'id'>) => {
-    await addToCollection<Room>('rooms', newRoom, setRooms);
+    const id = generateReadableId('RM', newRoom.name);
+    await addToCollection<Room>('rooms', id, newRoom, setRooms);
   };
 
   const updateRoom = async (room: Room) => {
@@ -406,7 +403,9 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addSubject = async (newSubject: Omit<Subject, 'id'>) => {
-    await addToCollection<Subject>('subjects', newSubject, setSubjects);
+    // For subjects, the code is usually more unique than the name
+    const id = generateReadableId('SUB', newSubject.code || newSubject.name);
+    await addToCollection<Subject>('subjects', id, newSubject, setSubjects);
   };
 
   const updateSubject = async (subject: Subject) => {
@@ -418,7 +417,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addBatch = async (newBatch: Omit<Batch, 'id'>) => {
-    await addToCollection<Batch>('batches', newBatch, setBatches);
+    const id = generateReadableId('BAT', newBatch.name);
+    await addToCollection<Batch>('batches', id, newBatch, setBatches);
   };
 
   const updateBatch = async (batch: Batch) => {
@@ -430,7 +430,8 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const addDepartment = async (newDept: Omit<Department, 'id'>) => {
-    await addToCollection<Department>('departments', newDept, setDepartments);
+    const id = generateReadableId('DEPT', newDept.code || newDept.name);
+    await addToCollection<Department>('departments', id, newDept, setDepartments);
   };
 
   const updateDepartment = async (dept: Department) => {
@@ -450,7 +451,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const docRef = doc(db, 'schedule', id);
             await updateDoc(docRef, data as any);
         } catch (e) { 
-             console.warn("Failed to update schedule entry in cloud", e);
+             // Fail silently
         }
     }
   };
@@ -462,7 +463,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         try {
             await deleteDoc(doc(db, 'schedule', id));
         } catch (e) { 
-             console.warn("Failed to delete schedule entry from cloud", e);
+             // Fail silently
         }
     }
   }
@@ -481,7 +482,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 });
                 await batch.commit();
               } catch(e) {
-                  console.warn("Cloud reset failed.", e);
+                  // Fail silently
               } finally {
                 setLoading(false);
               }
@@ -534,8 +535,6 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   await batch.commit();
               }
               
-              console.log(targetBatchId ? `Cleared existing schedule for batch ${targetBatchId}` : "Cleared master schedule.");
-
               // 3. Write new schedule in chunks
               const writeChunks = [];
               for (let i = 0; i < newSchedule.length; i += CHUNK_SIZE) {
@@ -551,74 +550,209 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                   await batch.commit();
               }
 
-              console.log("New schedule saved successfully.");
-
           } catch (e) {
-              console.error("Error saving generated schedule:", e);
-              alert("Error saving schedule to cloud. Check console for details.");
+              alert("Error saving schedule to cloud. Please try again.");
           } finally {
               setLoading(false);
           }
       } else {
           setLoading(false);
-          console.warn("Database not connected, schedule only saved locally.");
       }
   }
 
-  // Version Control Methods
-  const saveVersion = async (name: string) => {
-      if (!db) {
-          alert("Cannot save versions in offline mode.");
-          return;
-      }
+  const importData = async (data: AppData) => {
+      console.group("📦 Import Data Process Started");
+      console.log("Raw Data Received:", data);
       
+      setLoading(true);
       try {
-          setLoading(true);
-          const versionId = Math.random().toString(36).substr(2, 9);
-          const newVersion: ScheduleVersion = {
-              id: versionId,
-              name,
-              createdAt: new Date().toISOString(),
-              entries: schedule
-          };
+          if (!data.faculty || !data.rooms || !data.subjects) {
+              console.error("❌ Validation Failed: Missing required collections (faculty/rooms/subjects)");
+              throw new Error("Invalid data format");
+          }
+
+          console.log(`📊 Statistics:
+          - Faculty: ${data.faculty.length}
+          - Rooms: ${data.rooms.length}
+          - Subjects: ${data.subjects.length}
+          - Batches: ${data.batches.length}
+          - Departments: ${data.departments.length}
+          - Schedule Entries: ${data.schedule?.length || 0}
+          `);
+
+          // --- ID MIGRATION STRATEGY ---
+          console.time("ID Migration & Processing");
           
-          await setDoc(doc(db, 'schedule_versions', versionId), newVersion);
-          setVersions(prev => [newVersion, ...prev]);
-          console.log("Version saved:", name);
+          const idMaps = {
+              faculty: new Map<string, string>(),
+              rooms: new Map<string, string>(),
+              subjects: new Map<string, string>(),
+              batches: new Map<string, string>(),
+              departments: new Map<string, string>(),
+          };
+
+          // 1. Process Departments
+          const processedDepartments = (data.departments || []).map(d => {
+              const needsMigration = !d.id.startsWith('DEPT-');
+              const newId = needsMigration ? generateReadableId('DEPT', d.code || d.name) : d.id;
+              if (needsMigration) idMaps.departments.set(d.id, newId);
+              return { ...d, id: newId };
+          });
+
+          // 2. Process Rooms
+          const processedRooms = (data.rooms || []).map(r => {
+              const needsMigration = !r.id.startsWith('RM-');
+              const newId = needsMigration ? generateReadableId('RM', r.name) : r.id;
+              if (needsMigration) idMaps.rooms.set(r.id, newId);
+              return { ...r, id: newId };
+          });
+
+          // 3. Process Subjects
+          const processedSubjects = (data.subjects || []).map(s => {
+              const needsMigration = !s.id.startsWith('SUB-');
+              const newId = needsMigration ? generateReadableId('SUB', s.code || s.name) : s.id;
+              if (needsMigration) idMaps.subjects.set(s.id, newId);
+              return { ...s, id: newId };
+          });
+
+          // 4. Process Faculty (AndUpdate subject refs)
+          const processedFaculty = (data.faculty || []).map(f => {
+              const needsMigration = !f.id.startsWith('FAC-');
+              const newId = needsMigration ? generateReadableId('FAC', f.name) : f.id;
+              if (needsMigration) idMaps.faculty.set(f.id, newId);
+              
+              // Update subject references within faculty
+              const updatedSubjects = (f.subjects || []).map(subId => idMaps.subjects.get(subId) || subId);
+
+              return { ...f, id: newId, subjects: updatedSubjects };
+          });
+
+          // 5. Process Batches (Update Room/Subject/Faculty refs)
+          const processedBatches = (data.batches || []).map(b => {
+              const needsMigration = !b.id.startsWith('BAT-');
+              const newId = needsMigration ? generateReadableId('BAT', b.name) : b.id;
+              if (needsMigration) idMaps.batches.set(b.id, newId);
+
+              // Update Fixed Room
+              const updatedFixedRoom = b.fixedRoomId ? (idMaps.rooms.get(b.fixedRoomId) || b.fixedRoomId) : b.fixedRoomId;
+
+              // Update Simple Subject List (Deprecated but handle it)
+              const updatedSubjects = (b.subjects || []).map(subId => idMaps.subjects.get(subId) || subId);
+
+              // Update Assignments (Complex)
+              const updatedAssignments = (b.subjectAssignments || []).map(assign => ({
+                  subjectId: idMaps.subjects.get(assign.subjectId) || assign.subjectId,
+                  facultyIds: (assign.facultyIds || []).map(fid => idMaps.faculty.get(fid) || fid)
+              }));
+
+              return { 
+                  ...b, 
+                  id: newId, 
+                  fixedRoomId: updatedFixedRoom,
+                  subjects: updatedSubjects,
+                  subjectAssignments: updatedAssignments
+              };
+          });
+
+          // 6. Process Schedule (Update ALL Refs)
+          // Note: We typically don't migrate Schedule IDs as they are ephemeral, but we update their foreign keys
+          const processedSchedule = (data.schedule || []).map(s => {
+              // Ensure consistent Schedule ID format if missing
+              const schId = s.id && s.id.startsWith('SCH-') ? s.id : `SCH-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+              
+              return {
+                  ...s,
+                  id: schId,
+                  batchId: idMaps.batches.get(s.batchId) || s.batchId,
+                  roomId: idMaps.rooms.get(s.roomId) || s.roomId,
+                  subjectId: idMaps.subjects.get(s.subjectId) || s.subjectId,
+                  facultyIds: (s.facultyIds || []).map(fid => idMaps.faculty.get(fid) || fid)
+              };
+          });
+
+          console.timeEnd("ID Migration & Processing");
+
+          // Optimistic Update
+          console.log("🔄 Updating Local State...");
+          setFaculty(processedFaculty);
+          setRooms(processedRooms);
+          setSubjects(processedSubjects);
+          setBatches(processedBatches);
+          setDepartments(processedDepartments);
+          setSchedule(processedSchedule); // Don't forget schedule!
+          setSettings(data.settings || DEFAULT_SETTINGS);
+
+          if (db) {
+              const firestore = db;
+              console.log("🔥 Starting Firestore Sync...");
+              
+              // Define collections to batch write
+              const collections = [
+                  { name: 'faculty', data: processedFaculty },
+                  { name: 'rooms', data: processedRooms },
+                  { name: 'subjects', data: processedSubjects },
+                  { name: 'batches', data: processedBatches },
+                  { name: 'departments', data: processedDepartments },
+                  { name: 'schedule', data: processedSchedule }
+              ];
+
+              const allOps: { col: string, data: any }[] = [];
+              
+              collections.forEach(c => {
+                  c.data.forEach(item => {
+                      allOps.push({ col: c.name, data: item });
+                  });
+              });
+
+              if(data.settings) {
+                  allOps.push({ col: 'settings', data: { ...data.settings, id: 'config' } });
+              }
+
+              console.log(`📝 Total Documents to Write: ${allOps.length}`);
+
+              const CHUNK_SIZE = 400;
+              const chunks = [];
+              for (let i = 0; i < allOps.length; i += CHUNK_SIZE) {
+                  chunks.push(allOps.slice(i, i + CHUNK_SIZE));
+              }
+
+              console.log(`📦 Batched into ${chunks.length} transactions`);
+
+              for (let i = 0; i < chunks.length; i++) {
+                  const chunk = chunks[i];
+                  console.log(`... Committing batch ${i + 1}/${chunks.length} (${chunk.length} docs)`);
+                  const batch = writeBatch(firestore);
+                  chunk.forEach(op => {
+                      if (op.col === 'settings') {
+                           batch.set(doc(firestore, 'settings', 'config'), op.data);
+                      } else {
+                           batch.set(doc(firestore, op.col, op.data.id), op.data);
+                      }
+                  });
+                  await batch.commit();
+              }
+              console.log("✅ Firestore Sync Complete");
+          } else {
+              console.warn("⚠️ Database connection not available, only updated local state.");
+          }
       } catch (e) {
-          console.error("Failed to save version:", e);
-          alert("Failed to save version.");
+          console.error("❌ Import Failed:", e);
+          alert("Failed to import data. Check console for details.");
       } finally {
           setLoading(false);
-      }
-  };
-
-  const restoreVersion = async (versionId: string) => {
-      const version = versions.find(v => v.id === versionId);
-      if (!version) return;
-      
-      if (confirm(`Are you sure you want to restore "${version.name}"? This will overwrite the current live schedule.`)) {
-          // Full restore implies wiping everything and replacing, so no targetBatchId
-          await saveGeneratedSchedule(version.entries);
-      }
-  };
-
-  const deleteVersion = async (versionId: string) => {
-      if (confirm("Are you sure you want to delete this saved version?")) {
-          await deleteFromCollection('schedule_versions', versionId, setVersions);
+          console.groupEnd();
       }
   };
 
   return (
     <StoreContext.Provider value={{
       user, login, logout,
-      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots, versions,
-      addScheduleEntry, updateScheduleEntry, deleteScheduleEntry, checkConflicts, resetData, saveGeneratedSchedule, loading,
+      faculty, rooms, subjects, batches, departments, schedule, conflicts, settings, generatedSlots,
+      addScheduleEntry, updateScheduleEntry, deleteScheduleEntry, checkConflicts, resetData, saveGeneratedSchedule, loading, importData,
       addFaculty, addRoom, addSubject, addBatch, addDepartment,
       updateFaculty, updateRoom, updateSubject, updateBatch, updateDepartment,
       deleteFaculty, deleteRoom, deleteSubject, deleteBatch, deleteDepartment,
-      updateSettings,
-      saveVersion, restoreVersion, deleteVersion
+      updateSettings
     }}>
       {children}
     </StoreContext.Provider>

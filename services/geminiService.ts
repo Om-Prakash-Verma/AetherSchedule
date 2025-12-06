@@ -9,11 +9,13 @@ export const checkHealth = (): boolean => {
   return !!process.env.API_KEY;
 };
 
-// Use Gemini 3.0 Pro Preview for the primary complex reasoning tasks
-const REASONING_MODEL = "gemini-3-pro-preview";
+// We use Gemini 2.5 Flash as the primary model because it is:
+// 1. Fast and Low Latency
+// 2. High Quota (avoids 429 errors on free tier)
+// 3. Supports 'thinkingConfig' for complex reasoning
+const REASONING_MODEL = "gemini-2.5-flash";
 
-// Use Gemini 2.5 Flash for the secondary/fallback model
-// Promoted to secondary because it has higher rate limits and handles JSON well.
+// Fallback model
 const SECONDARY_MODEL = "gemini-2.5-flash";
 
 export interface AIAnalysisResult {
@@ -113,7 +115,6 @@ export const analyzeScheduleWithGemini = async (
       try {
         jsonContext = JSON.stringify(context);
       } catch (jsonError) {
-        console.error("JSON Stringify failed in analysis:", jsonError);
         jsonContext = JSON.stringify({ error: "Data serialization failed.", summary: context.scheduleSummary });
       }
 
@@ -149,7 +150,6 @@ export const analyzeScheduleWithGemini = async (
       return result as AIAnalysisResult;
 
   } catch (error) {
-    console.error("Gemini Analysis Error:", error);
     return {
       score: 50,
       analysis: "Could not analyze schedule due to AI service or data error.",
@@ -162,7 +162,7 @@ export const chatWithScheduler = async (
   message: string,
   currentScheduleState: any
 ): Promise<string> => {
-  if (!process.env.API_KEY) return "Please configure your Gemini API Key.";
+  if (!process.env.API_KEY) return "Please configure your Gemini API Key in the .env file.";
 
   try {
       // 1. Sanitize
@@ -192,8 +192,7 @@ export const chatWithScheduler = async (
       return response.text || "I didn't catch that.";
       
   } catch (error) {
-      console.error("Chat Error:", error);
-      return "I'm having trouble connecting to my brain right now.";
+      return "I'm having trouble connecting to my brain right now. Please check your API key and connection.";
   }
 };
 
@@ -216,7 +215,6 @@ export const generateOptimizationPlan = async (
         });
         return JSON.parse(response.text || "{}");
     } catch (e) {
-        console.error("Optimization Plan Error:", e);
         return null;
     }
 }
@@ -231,7 +229,6 @@ const validateAndRepairSchedule = (
     settings: TimetableSettings,
     generatedSlots: string[]
 ): ScheduleEntry[] => {
-    console.log("Starting Deterministic Repair Layer...");
     
     // Create a deep copy to modify
     const repairedSchedule = [...generatedEntries];
@@ -269,8 +266,6 @@ const validateAndRepairSchedule = (
         }
 
         if (isConflict) {
-            console.warn(`Conflict detected for ${entry.subjectId} at ${currentKey}. Attempting repair...`);
-            
             // Find a new slot
             let foundSlot = false;
             
@@ -296,14 +291,9 @@ const validateAndRepairSchedule = (
                         entry.day = day;
                         entry.slot = slotIdx;
                         foundSlot = true;
-                        console.log(`-> Moved to ${day}-${slotIdx}`);
                         break;
                     }
                 }
-            }
-            
-            if (!foundSlot) {
-                console.error(`CRITICAL: Could not find any valid slot for ${entry.subjectId}. Left in conflicting state.`);
             }
         }
 
@@ -333,7 +323,7 @@ export const generateScheduleWithGemini = async (
     targetBatchId?: string, // NEW: If provided, only generate for this batch
     existingSchedule?: ScheduleEntry[] // NEW: Used as a "Busy Mask" for other batches
 ): Promise<ScheduleEntry[]> => {
-    if (!process.env.API_KEY) throw new Error("Gemini API Key missing");
+    if (!process.env.API_KEY) throw new Error("Gemini API Key missing. Please check .env file.");
 
     // 1. Filter Batches: If targetBatchId is set, only send that batch to the AI
     const batchesToSchedule = targetBatchId 
@@ -485,26 +475,25 @@ export const generateScheduleWithGemini = async (
 
     let rawSchedule: any[] = [];
 
-    // Attempt 1: Gemini 3.0 Pro (Reasoning)
+    // Attempt 1: Gemini 2.5 Flash with Thinking Config
     try {
-        console.log(`[Attempt 1] Starting Advanced Constraint Solver (${REASONING_MODEL})...`);
         const response = await ai.models.generateContent({
             model: REASONING_MODEL,
             contents: prompt,
             config: {
                 responseMimeType: "application/json",
-                responseSchema: responseSchema
+                responseSchema: responseSchema,
+                // Thinking config allows the model to "plan" the schedule before outputting JSON.
+                // This significantly improves constraint satisfaction for timetabling.
+                thinkingConfig: { thinkingBudget: 2048 }
             }
         });
         rawSchedule = JSON.parse(response.text || "[]");
 
     } catch (primaryError: any) {
-        console.warn(`[Attempt 1 Failed] ${REASONING_MODEL} busy/quota. Falling back to Secondary model...`, primaryError);
         
-        // Attempt 2: Gemini 2.5 Flash (High Availability)
-        // We use Flash as the immediate backup because it has higher limits than other Pro models.
+        // Attempt 2: Retry with same model but without thinking config (sometimes thinking causes timeouts on complex prompts)
         try {
-            console.log(`[Attempt 2] Starting Constraint Solver (${SECONDARY_MODEL})...`);
             const response = await ai.models.generateContent({
                 model: SECONDARY_MODEL,
                 contents: prompt,
@@ -516,8 +505,6 @@ export const generateScheduleWithGemini = async (
             rawSchedule = JSON.parse(response.text || "[]");
 
         } catch (secondaryError: any) {
-             console.error("Critical Failure: Both AI models failed.", secondaryError);
-             
              if (primaryError?.status === 429 || secondaryError?.status === 429) {
                  throw new Error("AI Service Busy (Rate Limit Exceeded). Please wait 30 seconds and try again.");
              }
@@ -540,7 +527,8 @@ export const generateScheduleWithGemini = async (
  */
 const processGeneratedSchedule = (rawData: any[]): ScheduleEntry[] => {
     return rawData.map((item: any) => ({
-        id: Math.random().toString(36).substr(2, 9),
+        // Use a consistent readable-ish random ID for schedules (SCH- prefix)
+        id: `SCH-${Math.random().toString(36).substr(2, 9).toUpperCase()}`,
         day: item.day,
         slot: item.slot,
         subjectId: item.subjectId,

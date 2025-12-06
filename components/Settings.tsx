@@ -40,7 +40,6 @@ const Settings = () => {
     };
 
     const handleBreakSubmit = () => {
-        console.log("Attempting to add/update break:", breakForm);
         setBreakMessage(null);
 
         if (!breakForm.name || !breakForm.startTime || !breakForm.endTime) {

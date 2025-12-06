@@ -96,13 +96,14 @@ export interface TimetableSettings {
     breaks: Break[];
 }
 
-// --- Version Control Types ---
-
-export interface ScheduleVersion {
-    id: string;
-    name: string;
-    createdAt: string; // ISO Date String
-    entries: ScheduleEntry[];
+export interface AppData {
+  faculty: Faculty[];
+  rooms: Room[];
+  subjects: Subject[];
+  batches: Batch[];
+  departments: Department[];
+  settings: TimetableSettings;
+  schedule?: ScheduleEntry[];
 }
 
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

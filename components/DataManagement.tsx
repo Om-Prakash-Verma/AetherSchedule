@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
-import { User, BookOpen, Layers, Box, Building } from 'lucide-react';
-import { ResourceType } from '../types';
+import { User, BookOpen, Layers, Box, Building, Download, Upload, Loader2 } from 'lucide-react';
+import { ResourceType, AppData } from '../types';
 import { clsx } from 'clsx';
 import DataTable from './datamanagement/modules/DataTable';
 import ResourceModal from './datamanagement/modules/ResourceModal';
@@ -9,7 +9,8 @@ import DeleteConfirmationModal from './datamanagement/modules/DeleteConfirmation
 
 const DataManagement = () => {
     const { 
-        faculty, subjects, rooms, batches, departments,
+        faculty, subjects, rooms, batches, departments, settings, schedule,
+        loading, importData,
         addFaculty, addRoom, addSubject, addBatch, addDepartment,
         updateFaculty, updateRoom, updateSubject, updateBatch, updateDepartment,
         deleteFaculty, deleteRoom, deleteSubject, deleteBatch, deleteDepartment
@@ -175,25 +176,77 @@ const DataManagement = () => {
         setEditingItem(null);
     };
 
+    const handleExport = () => {
+        const data: AppData = {
+            faculty, rooms, subjects, batches, departments, settings, schedule
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `aether-backup-${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+            try {
+                const data = JSON.parse(ev.target?.result as string);
+                if(confirm("Importing data will overwrite existing records with matching IDs and add new ones. Continue?")) {
+                    await importData(data);
+                    alert("Import successful!");
+                }
+            } catch(err) {
+                alert("Invalid file format. Please upload a valid JSON backup.");
+            }
+        };
+        reader.readAsText(file);
+        e.target.value = ''; // reset
+    };
+
     return (
-        <div className="flex flex-col h-full">
-            {/* Tab Navigation - Scrollable on mobile */}
-            <div className="flex overflow-x-auto no-scrollbar gap-2 mb-6 p-1.5 bg-slate-900/50 rounded-xl w-full md:w-fit border border-white/5 backdrop-blur-sm shadow-sm">
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={clsx(
-                            "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
-                            activeTab === tab.id 
-                                ? "bg-primary text-white shadow-lg shadow-primary/25 scale-[1.02] ring-1 ring-white/10" 
-                                : "text-slate-400 hover:text-white hover:bg-white/5"
-                        )}
+        <div className="flex flex-col h-full space-y-4">
+            {/* Header / Actions */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div className="flex overflow-x-auto no-scrollbar gap-2 p-1.5 bg-slate-900/50 rounded-xl w-full md:w-fit border border-white/5 backdrop-blur-sm shadow-sm">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={clsx(
+                                "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
+                                activeTab === tab.id 
+                                    ? "bg-primary text-white shadow-lg shadow-primary/25 scale-[1.02] ring-1 ring-white/10" 
+                                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                            )}
+                        >
+                            <tab.icon size={16} />
+                            {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                    <button 
+                        onClick={handleExport}
+                        className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-700 transition-all text-sm font-medium whitespace-nowrap"
                     >
-                        <tab.icon size={16} />
-                        {tab.label}
+                        <Download size={16} />
+                        Export JSON
                     </button>
-                ))}
+                    <label className={clsx(
+                        "flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 transition-all text-sm font-medium whitespace-nowrap cursor-pointer",
+                        loading ? "bg-slate-800 opacity-50 cursor-wait" : "bg-slate-800 hover:text-white hover:bg-slate-700"
+                    )}>
+                        {loading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                        <span>{loading ? "Importing..." : "Import JSON"}</span>
+                        <input type="file" accept=".json" onChange={handleImport} className="hidden" disabled={loading} />
+                    </label>
+                </div>
             </div>
 
             {/* Content Area */}

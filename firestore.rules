@@ -1,9 +1,82 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
+    
+    // --- Helper Functions ---
+    
+    // Check if the authenticated user is listed in the 'admins' collection
+    function isAdmin() {
+      return request.auth != null && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+    
+    // Basic Type Checks
+    function isString(val) { return val is string; }
+    function isNumber(val) { return val is number; }
+    function isBoolean(val) { return val is bool; }
+    
+    // --- Collection Rules ---
+
+    // 1. Faculty: Public Read, Admin Write, Schema Validation
+    match /faculty/{docId} {
       allow read: if true;
-      allow write: if request.auth != null;
+      allow write: if isAdmin() 
+                   && isString(request.resource.data.name)
+                   && isString(request.resource.data.department);
+    }
+
+    // 2. Rooms: Public Read, Admin Write, Schema Validation
+    match /rooms/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && isString(request.resource.data.name)
+                   && isNumber(request.resource.data.capacity);
+    }
+
+    // 3. Subjects: Public Read, Admin Write, Schema Validation
+    match /subjects/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && isString(request.resource.data.name)
+                   && isString(request.resource.data.code);
+    }
+
+    // 4. Batches: Public Read, Admin Write, Schema Validation
+    match /batches/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && isString(request.resource.data.name);
+    }
+
+    // 5. Departments: Public Read, Admin Write, Schema Validation
+    match /departments/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && isString(request.resource.data.name);
+    }
+
+    // 6. Schedule: Public Read, Admin Write, Schema Validation
+    match /schedule/{docId} {
+      allow read: if true;
+      allow write: if isAdmin()
+                   && isString(request.resource.data.day)
+                   && isNumber(request.resource.data.slot)
+                   && isString(request.resource.data.batchId)
+                   && isString(request.resource.data.roomId)
+                   && isString(request.resource.data.subjectId);
+    }
+
+    // 7. Settings: Public Read, Admin Write
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // 8. Admins: Secure Access
+    // Only the user themselves can read their admin doc (to verify status)
+    // No one can write to 'admins' via client SDK (must be done via Firebase Console)
+    match /admins/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false; 
     }
   }
 }
