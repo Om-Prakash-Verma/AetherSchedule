@@ -6,7 +6,6 @@ import Scheduler from './components/Scheduler';
 import DataManagement from './components/DataManagement';
 import StudentPortal from './components/StudentPortal';
 import FacultyPortal from './components/FacultyPortal';
-import Analytics from './components/Analytics';
 import Settings from './components/Settings';
 import Login from './components/Login';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -54,7 +53,7 @@ const App: React.FC = () => {
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/schedule" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
           <Route path="/resources" element={<ProtectedRoute><DataManagement /></ProtectedRoute>} />
-          <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+          <Route path="/analytics" element={<Navigate to="/" replace />} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
