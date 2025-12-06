@@ -57,20 +57,31 @@ const Layout = ({ children }: LayoutProps) => {
     <div className="flex h-screen w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black text-slate-200 selection:bg-primary/30">
       
       {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/80 backdrop-blur-xl border-b border-glassBorder px-4 py-3 flex items-center justify-between safe-area-top">
-          <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
-                    <Command size={18} className="text-white" />
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-40 bg-slate-950/90 backdrop-blur-xl border-b border-glassBorder px-4 py-3 flex items-center justify-between safe-area-top shadow-lg">
+          <div className="flex items-center gap-3">
+                <button 
+                    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                    className="p-2 -ml-2 text-slate-300 hover:bg-white/10 rounded-lg active:scale-95 transition-transform"
+                    aria-label="Toggle Menu"
+                >
+                    {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
+                </button>
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                        <Command size={18} className="text-white" />
+                    </div>
+                    <span className="font-bold text-white tracking-tight text-lg hidden xs:inline">AetherSchedule</span>
                 </div>
-                <span className="font-bold text-white tracking-tight text-lg">AetherSchedule</span>
           </div>
-          <button 
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 text-slate-300 hover:bg-white/10 rounded-lg active:scale-95 transition-transform"
-            aria-label="Toggle Menu"
-          >
-            {isSidebarOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className={clsx(
+                "flex items-center gap-2 text-[10px] font-medium px-2 py-1 rounded-full border",
+                loading 
+                    ? "bg-slate-800/50 border-slate-700 text-slate-400"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
+            )}>
+                {loading ? <Loader2 size={12} className="animate-spin" /> : <Cloud size={12} />}
+                <span>{loading ? "Syncing..." : "Live"}</span>
+          </div>
       </div>
 
       {/* Backdrop for Mobile */}
@@ -98,10 +109,15 @@ const Layout = ({ children }: LayoutProps) => {
         
         {/* Mobile Sidebar Header */}
         <div className="lg:hidden flex items-center justify-between mb-8 px-2 pt-2">
-            <span className="text-slate-400 text-xs uppercase font-bold tracking-widest">Navigation</span>
+            <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center">
+                    <Command size={18} className="text-white" />
+                </div>
+                <span className="font-bold text-white tracking-tight">Menu</span>
+            </div>
             <button 
                 onClick={() => setIsSidebarOpen(false)}
-                className="p-1 text-slate-500 hover:text-white transition-colors"
+                className="p-2 bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
             >
                 <X size={20} />
             </button>
@@ -121,9 +137,9 @@ const Layout = ({ children }: LayoutProps) => {
         <div className="mt-auto pt-6 border-t border-glassBorder space-y-4">
             <SidebarItem to="/settings" icon={Settings} label="Settings" />
 
-            {/* Connection Status Indicator */}
+            {/* Connection Status Indicator (Desktop) */}
             <div className={clsx(
-                "px-4 py-3 rounded-xl border flex items-center gap-3 text-xs font-medium transition-colors",
+                "hidden lg:flex px-4 py-3 rounded-xl border items-center gap-3 text-xs font-medium transition-colors",
                 loading 
                     ? "bg-slate-800/50 border-slate-700 text-slate-400"
                     : "bg-emerald-500/10 border-emerald-500/20 text-emerald-500"
@@ -154,9 +170,9 @@ const Layout = ({ children }: LayoutProps) => {
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto relative w-full custom-scrollbar">
         {/* Spacer for Mobile Header */}
-        <div className="h-16 lg:hidden flex-shrink-0" />
+        <div className="h-[60px] lg:hidden flex-shrink-0" />
         
-        <div className="p-4 md:p-8 max-w-[1600px] mx-auto pb-24 safe-area-bottom">
+        <div className="p-4 md:p-8 max-w-[1600px] mx-auto pb-24 safe-area-bottom min-h-[calc(100vh-60px)]">
             {children}
         </div>
       </main>
@@ -176,7 +192,7 @@ export const PublicLayout = ({ children }: LayoutProps) => {
     return (
         <div className="flex h-screen w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black text-slate-200 selection:bg-primary/30">
              {/* Public Header */}
-             <div className="fixed top-0 left-0 right-0 z-40 px-6 py-4 flex items-center justify-between safe-area-top">
+             <div className="fixed top-0 left-0 right-0 z-40 px-6 py-4 flex items-center justify-between safe-area-top bg-gradient-to-b from-slate-950 to-transparent lg:bg-none">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
                         <Command size={18} className="text-white" />
@@ -186,7 +202,7 @@ export const PublicLayout = ({ children }: LayoutProps) => {
                 <div className="flex items-center gap-4">
                     <button 
                         onClick={() => navigate('/login')}
-                        className="text-sm font-medium text-slate-400 hover:text-white transition-colors"
+                        className="text-sm font-medium text-slate-400 hover:text-white transition-colors bg-slate-900/50 px-3 py-1.5 rounded-lg border border-slate-700 backdrop-blur-md"
                     >
                         Admin Login
                     </button>

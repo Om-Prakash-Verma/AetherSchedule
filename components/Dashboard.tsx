@@ -58,7 +58,7 @@ const Dashboard = () => {
     return (
         <div className="space-y-6 md:space-y-8 relative z-10">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                <div>
+                <div className="flex-1">
                     <h2 className="text-2xl md:text-3xl font-bold text-white tracking-tight">Operations Dashboard</h2>
                     <p className="text-sm md:text-base text-slate-400 mt-1">Real-time overview of academic resources and scheduling health.</p>
                 </div>

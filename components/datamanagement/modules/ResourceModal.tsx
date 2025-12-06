@@ -537,7 +537,7 @@ const ResourceModal: React.FC<ResourceModalProps> = ({
 
     return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-slate-900 border border-glassBorder rounded-t-2xl sm:rounded-2xl w-full max-w-2xl shadow-2xl p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto">
+            <div className="bg-slate-900 border-t sm:border border-glassBorder rounded-t-2xl sm:rounded-2xl w-full max-w-2xl shadow-2xl p-6 sm:p-8 relative max-h-[90vh] overflow-y-auto">
                 <button 
                     onClick={onClose}
                     className="absolute top-4 right-4 text-slate-500 hover:text-white"

@@ -177,14 +177,14 @@ const DataManagement = () => {
 
     return (
         <div className="flex flex-col h-full">
-            {/* Tab Navigation */}
-            <div className="flex flex-wrap gap-2 mb-6 p-1.5 bg-slate-900/50 rounded-xl w-fit border border-white/5 backdrop-blur-sm">
+            {/* Tab Navigation - Scrollable on mobile */}
+            <div className="flex overflow-x-auto no-scrollbar gap-2 mb-6 p-1.5 bg-slate-900/50 rounded-xl w-full md:w-fit border border-white/5 backdrop-blur-sm shadow-sm">
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
                         className={clsx(
-                            "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                            "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 whitespace-nowrap flex-shrink-0",
                             activeTab === tab.id 
                                 ? "bg-primary text-white shadow-lg shadow-primary/25 scale-[1.02] ring-1 ring-white/10" 
                                 : "text-slate-400 hover:text-white hover:bg-white/5"

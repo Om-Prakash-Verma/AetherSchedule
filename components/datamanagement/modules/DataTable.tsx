@@ -35,16 +35,19 @@ const DataTable: React.FC<DataTableProps> = ({ title, icon: Icon, data, columns,
 
     return (
         <div className="rounded-2xl border border-glassBorder bg-glass backdrop-blur-md flex flex-col overflow-hidden h-full min-h-[500px] group transition-all duration-300 shadow-xl">
-            <div className="p-5 border-b border-glassBorder flex flex-col md:flex-row md:items-center gap-4 bg-slate-900/50">
-                <div className="flex items-center gap-3 min-w-fit">
-                    <div className="p-2 rounded-lg bg-primary/10 text-primary">
-                        <Icon size={20} />
-                    </div>
-                    <div>
-                        <h3 className="font-bold text-white text-lg">{title}</h3>
-                        <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
-                            {filteredData.length} {filteredData.length !== data.length ? `found (of ${data.length})` : 'Records'}
-                        </p>
+            <div className="p-4 md:p-5 border-b border-glassBorder flex flex-col md:flex-row md:items-center gap-4 bg-slate-900/50">
+                {/* Title & Stats */}
+                <div className="flex items-center gap-3 min-w-fit justify-between md:justify-start">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                            <Icon size={20} />
+                        </div>
+                        <div>
+                            <h3 className="font-bold text-white text-lg leading-tight">{title}</h3>
+                            <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">
+                                {filteredData.length} {filteredData.length !== data.length ? `found (of ${data.length})` : 'Records'}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
