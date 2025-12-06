@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Calendar, Users, BarChart3, Settings, Command, Cloud, Loader2, Menu, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, Calendar, Users, BarChart3, Settings, Command, Cloud, Loader2, Menu, X, LogOut, GraduationCap, Briefcase } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useStore } from '../context/StoreContext';
 
@@ -111,6 +111,10 @@ const Layout = ({ children }: LayoutProps) => {
             <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
             <SidebarItem to="/schedule" icon={Calendar} label="Scheduler" />
             <SidebarItem to="/resources" icon={Users} label="Resources" />
+            <div className="my-2 border-t border-glassBorder/50 mx-2"></div>
+            <SidebarItem to="/student-portal" icon={GraduationCap} label="Student Portal" />
+            <SidebarItem to="/faculty-portal" icon={Briefcase} label="Faculty Portal" />
+            <div className="my-2 border-t border-glassBorder/50 mx-2"></div>
             <SidebarItem to="/analytics" icon={BarChart3} label="Analytics" />
         </nav>
 
@@ -164,6 +168,45 @@ const Layout = ({ children }: LayoutProps) => {
       </div>
     </div>
   );
+};
+
+export const PublicLayout = ({ children }: LayoutProps) => {
+    const navigate = useNavigate();
+
+    return (
+        <div className="flex h-screen w-full overflow-hidden bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-slate-800 via-slate-900 to-black text-slate-200 selection:bg-primary/30">
+             {/* Public Header */}
+             <div className="fixed top-0 left-0 right-0 z-40 px-6 py-4 flex items-center justify-between safe-area-top">
+                <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                        <Command size={18} className="text-white" />
+                    </div>
+                    <span className="font-bold text-white tracking-tight text-lg">AetherSchedule</span>
+                </div>
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={() => navigate('/login')}
+                        className="text-sm font-medium text-slate-400 hover:text-white transition-colors"
+                    >
+                        Admin Login
+                    </button>
+                </div>
+             </div>
+
+             {/* Main Content */}
+             <main className="flex-1 overflow-y-auto relative w-full custom-scrollbar pt-20">
+                <div className="p-4 md:p-8 max-w-[1600px] mx-auto pb-24 safe-area-bottom">
+                    {children}
+                </div>
+             </main>
+
+            {/* Ambient background effects */}
+            <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-50 md:opacity-100">
+                <div className="absolute top-[-10%] right-[-5%] w-64 md:w-96 h-64 md:h-96 bg-primary/10 rounded-full blur-3xl" />
+                <div className="absolute bottom-[-10%] left-[-5%] w-64 md:w-96 h-64 md:h-96 bg-accent/10 rounded-full blur-3xl" />
+            </div>
+        </div>
+    );
 };
 
 export default Layout;

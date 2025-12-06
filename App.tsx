@@ -1,9 +1,11 @@
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
-import Layout from './components/Layout';
+import Layout, { PublicLayout } from './components/Layout';
 import Dashboard from './components/Dashboard';
 import Scheduler from './components/Scheduler';
 import DataManagement from './components/DataManagement';
+import StudentPortal from './components/StudentPortal';
+import FacultyPortal from './components/FacultyPortal';
 import Settings from './components/Settings';
 import Login from './components/Login';
 import { StoreProvider, useStore } from './context/StoreContext';
@@ -34,6 +36,20 @@ const App: React.FC = () => {
         <Routes>
           <Route path="/login" element={<Login />} />
           
+          {/* Public Routes */}
+          <Route path="/student-portal" element={
+              <PublicLayout>
+                  <StudentPortal />
+              </PublicLayout>
+          } />
+          
+          <Route path="/faculty-portal" element={
+              <PublicLayout>
+                  <FacultyPortal />
+              </PublicLayout>
+          } />
+          
+          {/* Protected Routes */}
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/schedule" element={<ProtectedRoute><Scheduler /></ProtectedRoute>} />
           <Route path="/resources" element={<ProtectedRoute><DataManagement /></ProtectedRoute>} />

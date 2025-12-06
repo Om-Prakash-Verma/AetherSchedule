@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Faculty, Room, Batch, Subject, ScheduleEntry, ScheduleConflict, Department, TimetableSettings, ScheduleVersion } from '../types';
 import { db, auth } from '../services/firebase';
@@ -143,6 +142,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     let unsubVersions: () => void;
 
     const setupListeners = () => {
+        console.log("Setting up data listeners...");
         unsubFaculty = subscribe('faculty', setFaculty);
         unsubRooms = subscribe('rooms', setRooms);
         unsubSubjects = subscribe('subjects', setSubjects);
@@ -155,27 +155,26 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         unsubSettings = onSnapshot(doc(firestore, 'settings', 'config'), (docSnap) => {
             if (docSnap.exists()) {
                 // Merge with defaults to ensure robustness against partial data
-                setSettings(prev => ({ ...DEFAULT_SETTINGS, ...docSnap.data() } as TimetableSettings));
+                setSettings(prev => ({ ...DEFAULT_SETTINGS, ...(docSnap.data() as Partial<TimetableSettings>) } as TimetableSettings));
             } else {
-                // If doesn't exist, create it
-                setDoc(doc(firestore, 'settings', 'config'), DEFAULT_SETTINGS);
+                // If doesn't exist, we can't create it without auth, but we can default
+                console.log("Settings config not found, using defaults.");
             }
+        }, (error) => {
+             console.warn("Error fetching settings:", error.message);
         });
     };
+
+    // Initialize listeners immediately to allow public read access
+    setupListeners();
 
     const unsubAuth = onAuthStateChanged(auth, async (currentUser) => {
         setUser(currentUser);
         if (currentUser) {
             console.log("Authenticated:", currentUser.email);
-            setupListeners();
         } else {
-            console.log("User signed out.");
-            // Clear state on logout
-            setFaculty([]);
-            setRooms([]);
-            setSubjects([]);
-            setBatches([]);
-            setSchedule([]);
+            console.log("User signed out / Public Mode.");
+            // We do NOT clear state on logout anymore to support public view
         }
         setLoading(false);
     });

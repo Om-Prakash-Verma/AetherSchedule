@@ -1,8 +1,7 @@
-
 import React, { useState } from 'react';
 import { useStore } from '../context/StoreContext';
 import { useNavigate } from 'react-router-dom';
-import { Command, Mail, Lock, LogIn, Loader2, AlertCircle } from 'lucide-react';
+import { Command, Mail, Lock, LogIn, Loader2, AlertCircle, GraduationCap, Briefcase } from 'lucide-react';
 import { clsx } from 'clsx';
 
 const Login = () => {
@@ -114,10 +113,25 @@ const Login = () => {
                     </button>
                 </form>
 
-                <div className="mt-8 pt-6 border-t border-slate-800 text-center">
-                    <p className="text-xs text-slate-500">
-                        Restricted Access • Authorized Personnel Only
-                    </p>
+                <div className="my-6 border-t border-slate-800 relative">
+                    <span className="absolute left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2 bg-slate-900 px-2 text-xs text-slate-500">PUBLIC PORTALS</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        onClick={() => navigate('/student-portal')}
+                        className="py-3 rounded-xl font-medium text-slate-300 bg-slate-800/50 hover:bg-slate-700/80 hover:text-white transition-all flex flex-col items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                        <GraduationCap size={20} className="text-primary" />
+                        <span className="text-xs">Students</span>
+                    </button>
+                    <button
+                        onClick={() => navigate('/faculty-portal')}
+                        className="py-3 rounded-xl font-medium text-slate-300 bg-slate-800/50 hover:bg-slate-700/80 hover:text-white transition-all flex flex-col items-center justify-center gap-1.5 border border-slate-700"
+                    >
+                        <Briefcase size={20} className="text-emerald-400" />
+                        <span className="text-xs">Faculty</span>
+                    </button>
                 </div>
             </div>
         </div>
