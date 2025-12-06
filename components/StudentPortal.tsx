@@ -237,7 +237,11 @@ const StudentPortal = () => {
                                         // Helper to get resource details
                                         const subject = entry ? subjects.find(s => s.id === entry.subjectId) : null;
                                         const assignedRoom = entry ? rooms.find(r => r.id === entry.roomId) : null;
-                                        const assignedFaculty = entry ? (entry.facultyIds || []).map(fid => faculty.find(f => f.id === fid)?.name).filter(Boolean).join(', ') : '';
+                                        
+                                        // Get Faculty Names for display
+                                        const assignedFacultyIds = entry ? (entry.facultyIds || []) : [];
+                                        const assignedFacultyNames = assignedFacultyIds.map(fid => faculty.find(f => f.id === fid)?.name).filter(Boolean);
+                                        const assignedFacultyTooltip = assignedFacultyNames.join(', ');
 
                                         return (
                                             <td key={`${day}-${slot}`} className="p-2 border-b border-glassBorder h-32 align-top">
@@ -265,13 +269,21 @@ const StudentPortal = () => {
                                                         </div>
                                                         
                                                         <div className="space-y-1 mt-2">
-                                                            <div className="flex items-center gap-1.5 text-xs text-slate-300" title={assignedFaculty}>
-                                                                <User size={12} className="text-slate-500" />
-                                                                <span className="truncate">{assignedFaculty || 'TBA'}</span>
+                                                            <div className="flex gap-1.5 text-xs text-slate-300" title={assignedFacultyTooltip}>
+                                                                <User size={12} className="text-slate-500 mt-0.5 flex-shrink-0" />
+                                                                <div className="flex flex-col min-w-0">
+                                                                    {assignedFacultyNames.length > 0 ? (
+                                                                        assignedFacultyNames.map((name, i) => (
+                                                                            <span key={i} className="truncate leading-tight">{name}</span>
+                                                                        ))
+                                                                    ) : (
+                                                                        <span className="truncate">TBA</span>
+                                                                    )}
+                                                                </div>
                                                             </div>
                                                             <div className="flex items-center gap-1.5 text-xs text-slate-400">
-                                                                <MapPin size={12} className="text-slate-500" />
-                                                                <span className="uppercase tracking-wide">{assignedRoom?.name || 'TBA'}</span>
+                                                                <MapPin size={12} className="text-slate-500 flex-shrink-0" />
+                                                                <span className="uppercase tracking-wide truncate">{assignedRoom?.name || 'TBA'}</span>
                                                             </div>
                                                         </div>
                                                     </div>

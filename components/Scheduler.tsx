@@ -376,13 +376,15 @@ const Scheduler = () => {
                                         const conflict = conflicts.find(c => c.involvedIds.includes(entry?.id || ''));
                                         const hasConflict = !!conflict;
                                         
-                                        // Helper to display faculty names
+                                        // Helper to get resources
+                                        const subject = entry ? subjects.find(s => s.id === entry.subjectId) : null;
+                                        
+                                        // Helper to display faculty names (for tooltip)
                                         const getFacultyNames = () => {
                                             if (!entry) return '';
                                             const ids = (entry.facultyIds || []);
                                             return ids.map(id => {
                                                 const f = faculty.find(fac => fac.id === id);
-                                                // Removed .split(' ').pop() to show full name
                                                 return f ? f.name : 'Unknown';
                                             }).join(', ');
                                         };
@@ -420,20 +422,36 @@ const Scheduler = () => {
                                                                 ? "bg-slate-700/50 border-slate-600 text-slate-300"
                                                                 : "bg-primary/20 border-primary/30 text-indigo-100"
                                                     )}>
-                                                        <div className="flex justify-between items-start">
-                                                            <span className="font-bold truncate" title={subjects.find(s => s.id === entry.subjectId)?.name}>
-                                                                {subjects.find(s => s.id === entry.subjectId)?.code || 'Unknown'}
-                                                            </span>
-                                                            <div className="flex gap-1">
+                                                        <div className="flex justify-between items-start gap-1">
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="font-bold leading-tight line-clamp-2 mb-0.5" title={subject?.name}>
+                                                                    {subject?.name || 'Unknown'}
+                                                                </span>
+                                                                <span className="text-[10px] opacity-80 font-mono truncate">
+                                                                    {subject?.code}
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex gap-1 flex-shrink-0">
                                                                 {hasConflict && <AlertTriangle size={12} className="text-red-400" />}
                                                                 {entry.isLocked && <Lock size={12} className="text-slate-400" />}
                                                             </div>
                                                         </div>
                                                         <div className="space-y-1 mt-1">
-                                                            <div className="flex items-center gap-1 opacity-80" title={getFacultyNames()}>
-                                                                <span className="truncate">{getFacultyNames()}</span>
+                                                            <div className="flex flex-col gap-0.5 opacity-90" title={getFacultyNames()}>
+                                                                {(entry.facultyIds || []).length > 0 ? (
+                                                                    (entry.facultyIds || []).map((fid, idx) => {
+                                                                        const fName = faculty.find(f => f.id === fid)?.name || 'Unknown';
+                                                                        return (
+                                                                            <span key={idx} className="truncate block w-full leading-tight">
+                                                                                {fName}
+                                                                            </span>
+                                                                        );
+                                                                    })
+                                                                ) : (
+                                                                    <span className="truncate">TBA</span>
+                                                                )}
                                                             </div>
-                                                            <div className="flex items-center gap-1 opacity-60 text-[10px] uppercase">
+                                                            <div className="flex items-center gap-1 opacity-60 text-[10px] uppercase pt-0.5">
                                                                 {rooms.find(r => r.id === entry.roomId)?.name || 'Unknown'}
                                                             </div>
                                                         </div>
