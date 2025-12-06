@@ -483,7 +483,7 @@ const Settings = () => {
                                         onChange={(e) => setNewAdminId(e.target.value)}
                                         className="w-full bg-slate-800 border border-slate-600 rounded-lg p-2.5 text-sm text-white focus:ring-primary focus:border-primary font-mono placeholder:font-sans"
                                     />
-                                    <p className="text-[10px] text-slate-500 mt-1">Found in Firebase Console > Authentication</p>
+                                    <p className="text-[10px] text-slate-500 mt-1">Found in Firebase Console &gt; Authentication</p>
                                 </div>
                                 <div>
                                     <label className="block text-xs font-medium text-slate-500 mb-1">Email (Optional Reference)</label>
